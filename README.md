@@ -47,7 +47,7 @@ This code is written to develop the model from scratch. Below are the variables 
 - csv_test: the name of csv file which contains the image name, type, and valence for test set. 
 - batch_size: the size of single batch you want to feed your network per iteration.
 - epoch: number of epoch you want to train your model.
--lr: learning rate.
+- lr: learning rate.
 - model_to_run: the int type code of which model you want to run the training.
 - model_dir: the name of your directory where the result model is saved. 
 - model_name: the name of your trained model. 
@@ -79,7 +79,7 @@ This code is written to finetune the model into quadrant input dimension. The in
 - csv_test: the name of csv file which contains the image name, type, and valence for test set. 
 - batch_size: the size of single batch you want to feed your network per iteration.
 - epoch: number of epoch you want to train your model.
--lr: learning rate.
+- lr: learning rate.
 - model_to_run: the int type code of which model you want to run the training.
 - model_dir: the name of your directory where the result model is saved. 
 - model_name: the name of your trained model. 
