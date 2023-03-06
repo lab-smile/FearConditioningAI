@@ -92,5 +92,5 @@ This code is written to finetune the model into quadrant input dimension. The in
 
 **example:**
 ```
-python train_regression.py --data_dir ./data --TRAIN IAPS_split_train --VAL IAPS_split_val --TEST IAPS_split_test --csv_train IAPS_split_train.csv --csv_val IAPS_split_val.csv --csv_test IAPS_split_test.csv --batch_size 10 --lr 1e-4 --model_to_run 6 --model_dir ./savedmodel --is_fine_tune True 
+python train_finetuning.py --data_dir ./data --TRAIN IAPS_split_train --VAL IAPS_split_val --TEST IAPS_split_test --csv_train IAPS_split_train.csv --csv_val IAPS_split_val.csv --csv_test IAPS_split_test.csv --batch_size 10 --lr 1e-4 --model_to_run 6 --model_dir ./savedmodel --is_fine_tune True 
 ```
