@@ -12,7 +12,7 @@ import time
 import random
 import os
 import copy
-from utils import save_checkpoint, load_checkpoint, cond_eval_model
+from utils import save_checkpoint, cond_eval_model
 from dataloader import cond_dataloader3
 import argparse
 from scipy.stats import pearsonr
@@ -20,10 +20,7 @@ import numpy as np
 from GPUtil import showUtilization as gpu_usage
 from numba import cuda
 from models.VGG_Model import VGG, VGG_Freeze_conv, VGG_BN_Freeze_conv, VGG_Freeze_conv_FC1, VGG_Freeze_conv_FC2, \
-    Visual_Cortex_Amygdala, Visual_Cortex_Amygdala_wo_Attention, VGG_Freeze_conv_FC2_attention, \
-    VGG_Freeze_conv_attention
-
-from models.VGG_Model_Conditioning import VGG_Freeze_conv1_FC2_attention
+    Visual_Cortex_Amygdala, Visual_Cortex_Amygdala_wo_Attention, VGG_Freeze_conv_FC2_attention
 
 r"""This code trains the regression model for emotion decoding. In parser.add_argument, you need to fill out the 
     parameters you need for code to work. 
@@ -57,12 +54,12 @@ parser = argparse.ArgumentParser(description='Parameters ')
 parser.add_argument('--data_dir', default='./data', type=str, help='the data root folder')
 
 parser.add_argument('--gabor_dir1', action='store', dest='gabor_dir1', type=str, nargs='*',
-                    default=['./data/gabor_patch_full/freq10/gabor-gaussian-90-freq10-cont50.png'],
+                    default=['./data/gabor_patch_full/freq20/gabor-gaussian-45-freq20-cont50.png'],
                     help="This part is usually for placing one CS+"
                          "Examples: -i item1 item2, -i item3")
 
 parser.add_argument('--gabor_dir2', action='store', dest='gabor_dir2', type=str, nargs='*',
-                    default=['./data/gabor_patch_full/freq30/gabor-gaussian-90-freq30-cont50.png'],
+                    default=['./data/gabor_patch_full/freq20/gabor-gaussian-135-freq20-cont50.png'],
                     help="This part is usually for placing CS-"
                          "Examples: -i item1 item2, -i item3")
 
@@ -103,7 +100,7 @@ parser.add_argument('--start_epoch', default=0, type=int, metavar='N', help='man
 parser.add_argument('--is_fine_tune', default=True, type=lambda x: (str(x).lower() == 'true'),
                     help='whether to apply fine tuning to the model')
 
-parser.add_argument('--file_name', default='vca_IAPS_batch128_lr1e-4_epoch40.pth',
+parser.add_argument('--file_name', default='base_model_vca_IAPS_quadrant.pth',
                     type=str, help='name of the trained model')
 
 parser.add_argument('--manipulation', default=0.0, type=int, help='Probability to block out the unconditional stimulus')
@@ -121,6 +118,7 @@ os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 torch.cuda.empty_cache()
 
+
 def free_gpu_cache():
     print("Initial GPU Usage")
     gpu_usage()
@@ -133,6 +131,7 @@ def free_gpu_cache():
 
     print("GPU Usage after emptying the cache")
     gpu_usage()
+
 
 def train_model(dataloaders, dataset_sizes, TRAIN, VAL, model, criterion, optimizer, scheduler,
                 num_epochs, device, start_epoch=0):
@@ -314,15 +313,12 @@ def main():
             model = Visual_Cortex_Amygdala_wo_Attention()
         elif args.model_to_run == 8:
             model = VGG_Freeze_conv_FC2_attention()
-        elif args.model_to_run == 9:
-            model = VGG_Freeze_conv1_FC2_attention(args.model_dir, args.file_name)
 
     criterion = nn.MSELoss()
     optimizer_ft = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
     exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft, step_size=30, gamma=0.1)
     print(model)
 
-    #model = nn.DataParallel(model)
     model = model.to(device)
 
     print("Test before training")

@@ -11,7 +11,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import os
 from utils import load_checkpoint
-from dataloader import gabor_patch_loader, Quadrant_Processing
+from dataloader import image_patch_loader, Quadrant_Processing
 import argparse
 from datetime import datetime
 import csv
@@ -25,8 +25,8 @@ os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 # Params
 parser = argparse.ArgumentParser(description='Parameters')
-parser.add_argument('--data_dir', default='./data/gabor_patch_full/freq30', type=str, help='the data root folder')
-parser.add_argument('--gabor_patch', default='gabor-gaussian-90-freq30-cont50.png', type=str, help='the folder of test data')
+parser.add_argument('--data_dir', default='./data/gabor_patch_full/freq20', type=str, help='the data root folder')
+parser.add_argument('--gabor_patch', default='gabor-gaussian-135-freq20-cont50.png', type=str, help='the folder of test data')
 
 parser.add_argument('--model_dir',
                     default='/home/seowung/Brain inspired AI_Fear Conditioning/code_new/savedmodel/',
@@ -136,7 +136,7 @@ if __name__ == '__main__':
 
                 gabor_path = os.path.join(args.data_dir, args.gabor_patch)
 
-                inputs = gabor_patch_loader(gabor_patch_transform, gabor_path)
+                inputs = image_patch_loader(gabor_patch_transform, gabor_path)
 
                 # Load the  model
                 model = load_checkpoint(model, file_path)
