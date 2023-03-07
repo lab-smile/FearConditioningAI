@@ -1038,24 +1038,12 @@ def quadrant_finetune_dataloader(data_dir, train_folder, val_folder, test_folder
     return dataloaders, dataset_sizes
 
 
-def gabor_patch_loader(transform, dir):
+def image_patch_loader(transform, dir):
     """load image, returns cuda tensor"""
-    '''
-    image_size = 224
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
-
-    transforms.Compose([
-        transforms.Resize(size=(image_size, image_size)),
-        transforms.CenterCrop(image_size),
-        Quadrant_Processing(2),
-        transforms.ToTensor(),
-        normalize])
-    '''
 
     image = Image.open(dir)
     image = transform(image).float()
-    image = torch.tensor(image, requires_grad=True)
+    image = torch.tensor(image, requires_grad=False)
     image = image.unsqueeze(0)
     return image
 
