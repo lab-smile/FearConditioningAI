@@ -25,8 +25,8 @@ os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 # Params
 parser = argparse.ArgumentParser(description='Parameters')
-parser.add_argument('--data_dir', default='./data/gabor_patch_full/freq20', type=str, help='the data root folder')
-parser.add_argument('--gabor_patch', default='gabor-gaussian-135-freq20-cont50.png', type=str, help='the folder of test data')
+parser.add_argument('--data_dir', default='./data/gabor_RSA3', type=str, help='the data root folder')
+parser.add_argument('--gabor_patch', default='gabor-gaussian-135-freq20-cont100.png', type=str, help='the folder of test data')
 
 parser.add_argument('--model_dir',
                     default='/home/seowung/Brain inspired AI_Fear Conditioning/code_new/savedmodel/',
@@ -35,13 +35,13 @@ parser.add_argument('--model_dir',
 parser.add_argument('--model_to_run', default=6, type=int, help='which model you want to run with experiment')
 
 parser.add_argument('--initial_model_name',
-                    default='base_model_vca_IAPS_quadrant.pth',
+                    default='base_model_habituation_epoch100.pth',
                     type=str, help='name of the trained model；'
                                    '***Note**: You have to select which model can perform best on other datasets such as IAPS rather than the best model tested on the training data'
                                    'Usually, the model that has the best generalizability is the trained model obtained at earlier epochs such as 3rd epoch.')
 
 parser.add_argument('--conditioned_model_name',
-                    default='base_model_conditioned_orientation_epoch100.pth',
+                    default='base_model_acquisition_epoch100.pth',
                     type=str, help='name of the trained model；'
                                    '***Note**: You have to select which model can perform best on other datasets such as IAPS rather than the best model tested on the training data'
                                    'Usually, the model that has the best generalizability is the trained model obtained at earlier epochs such as 3rd epoch.')
@@ -157,9 +157,14 @@ if __name__ == '__main__':
                 if file_name == args.initial_model_name:
                     initial_pred = preds
                     sub_df = pd.DataFrame([[file_name, initial_pred[0]]], columns=['model', 'pred'])
-                else:
+
+                elif file_name == args.conditioned_model_name:
                     conditioned_pred = preds
                     sub_df = pd.DataFrame([[file_name, conditioned_pred[0]]], columns=['model', 'pred'])
+
+                else:
+                    pred = preds
+                    sub_df = pd.DataFrame([[file_name, pred[0]]], columns=['model', 'pred'])
 
                 result_df = result_df.append(sub_df, ignore_index=True)
                 result_df = result_df.sort_values(by=['model'], ascending=True)

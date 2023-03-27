@@ -46,15 +46,15 @@ r"""This code trains the regression model for emotion decoding. In parser.add_ar
 # Params
 parser = argparse.ArgumentParser(description='Parameters ')
 parser.add_argument('--data_dir', default='./data', type=str, help='the data root folder')
-parser.add_argument('--TRAIN', default='IAPS_120_no60_test', type=str, help='the folder of training data')
-parser.add_argument('--VAL', default='IAPS_120_no60_val', type=str, help='the folder of validation data')
-parser.add_argument('--TEST', default='IAPS_120_no60', type=str, help='the folder of test data')
+parser.add_argument('--TRAIN', default='ckvideo_middleframe_train', type=str, help='the folder of training data')
+parser.add_argument('--VAL', default='ckvideo_middleframe_val', type=str, help='the folder of validation data')
+parser.add_argument('--TEST', default='ckvideo_middleframe_test', type=str, help='the folder of test data')
 
-parser.add_argument('--csv_train', default='./data/IAPS_120_no60_test.csv', type=str,
+parser.add_argument('--csv_train', default='./data/ckvideo_middleframe_train.csv', type=str,
                     help='the path of training data csv file')
-parser.add_argument('--csv_val', default='./data/IAPS_120_no60_val.csv', type=str,
+parser.add_argument('--csv_val', default='./data/ckvideo_middleframe_val.csv', type=str,
                     help='the path of training data csv file')
-parser.add_argument('--csv_test', default='./data/IAPS_120_no60.csv', type=str,
+parser.add_argument('--csv_test', default='./data/ckvideo_middleframe_test.csv', type=str,
                     help='the path of training data csv file')
 
 parser.add_argument('--batch_size', default=128, type=int, help='batch size')
@@ -65,13 +65,13 @@ parser.add_argument('--lr', default=1e-4, type=float, help='initial learning rat
 parser.add_argument('--model_dir', default='./savedmodel', type=str, help='where to save the trained model')
 parser.add_argument('--model_to_run', default=6, type=int, help='which model you want to run with experiment')
 parser.add_argument('--model_name',
-                    default='vca_IAPS_batch128_lr1e-4.pth',
+                    default='vca_ckvideo_batch128_lr1e-4.pth',
                     type=str, help='name of the trained model')
 
 parser.add_argument('--resume', default=None, type=str, help='the path to checkpoint')
 parser.add_argument('--start_epoch', default=1, type=int, metavar='N', help='manual epoch number (useful on restarts)')
 
-parser.add_argument('--is_fine_tune', default=True, type=lambda x: (str(x).lower() == 'true'),
+parser.add_argument('--is_fine_tune', default=False, type=lambda x: (str(x).lower() == 'true'),
                     help='whether to apply fine tuning to the model')
 
 parser.add_argument('--file_name',
@@ -266,7 +266,6 @@ def main():
     # Defining the learning rate decay.
     exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft, step_size=30, gamma=0.1)
     print(model)
-
     # Feed the model to the GPU device.
     model = model.to(device)
 

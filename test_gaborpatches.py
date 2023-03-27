@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import os
 from utils import reg_eval_model, load_checkpoint
-from dataloader import gabor_patch_loader, Quadrant_Processing
+from dataloader import image_patch_loader, Quadrant_Processing
 import argparse
 from datetime import datetime
 import csv
@@ -26,7 +26,7 @@ os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 # Params
 parser = argparse.ArgumentParser(description='Parameters ')
-parser.add_argument('--data_dir', default='./data/gabor_RSA2', type=str, help='the data root folder')
+parser.add_argument('--data_dir', default='./data/gabor_RSA3', type=str, help='the data root folder')
 parser.add_argument('--gabor_patch', default='gabor-gaussian-45-freq20-cont100.png', type=str, help='the folder of test data')
 parser.add_argument('--model_to_run', default=1, type=int, help='which model you want to run with experiment')
 

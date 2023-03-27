@@ -1,11 +1,8 @@
-from __future__ import print_function, division
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim import lr_scheduler
-from torchvision.transforms import transforms
 import matplotlib
-import pandas as pd
 
 matplotlib.use('Agg')
 import time
@@ -13,7 +10,7 @@ import random
 import os
 import copy
 from utils import save_checkpoint, cond_eval_model
-from dataloader import cond_dataloader3
+from dataloader import acq_dataloader
 import argparse
 from scipy.stats import pearsonr
 import numpy as np
@@ -54,18 +51,25 @@ parser = argparse.ArgumentParser(description='Parameters ')
 parser.add_argument('--data_dir', default='./data', type=str, help='the data root folder')
 
 parser.add_argument('--gabor_dir1', action='store', dest='gabor_dir1', type=str, nargs='*',
-                    default=['./data/gabor_patch_full/freq20/gabor-gaussian-45-freq20-cont50.png'],
+                    default=['./data/gabor_RSA3/gabor-gaussian-45-freq20-cont100.png'],
                     help="This part is usually for placing one CS+"
                          "Examples: -i item1 item2, -i item3")
 
 parser.add_argument('--gabor_dir2', action='store', dest='gabor_dir2', type=str, nargs='*',
-                    default=['./data/gabor_patch_full/freq20/gabor-gaussian-135-freq20-cont50.png'],
+                    default=['./data/gabor_RSA3/gabor-gaussian-15-freq20-cont100.png'],
+                    help="This part is usually for placing CS-"
+                         "Examples: -i item1 item2, -i item3")
+
+parser.add_argument('--gabor_dir3', action='store', dest='gabor_dir3', type=str, nargs='*',
+                    default=['./data/gabor_RSA3/gabor-gaussian-75-freq20-cont100.png'],
                     help="This part is usually for placing CS-"
                          "Examples: -i item1 item2, -i item3")
 
 parser.add_argument('--TRAIN', default='IAPS_Conditioning_Unpleasant2', type=str,
                     help='the folder of training data')
-parser.add_argument('--TRAIN2', default='IAPS_Conditioning_Pleasant2', type=str,
+parser.add_argument('--TRAIN2', default='IAPS_10-10-80_train3_neutral2', type=str,
+                    help='the folder of training data')
+parser.add_argument('--TRAIN3', default='IAPS_10-10-80_train3_neutral2', type=str,
                     help='the folder of training data')
 
 parser.add_argument('--VAL', default='IAPS_10-10-80_val3', type=str, help='the folder of validation data')
@@ -73,7 +77,9 @@ parser.add_argument('--TEST', default='IAPS_10-10-80_test3', type=str, help='the
 
 parser.add_argument('--csv_train', default='./data/IAPS_Conditioning_Unpleasant2.csv', type=str,
                     help='the path of training data csv file')
-parser.add_argument('--csv_train2', default='./data/IAPS_Conditioning_Pleasant2.csv', type=str,
+parser.add_argument('--csv_train2', default='./data/IAPS_10-10-80_train3_neutral2.csv', type=str,
+                    help='the path of training data csv file')
+parser.add_argument('--csv_train3', default='./data/IAPS_10-10-80_train3_neutral2.csv', type=str,
                     help='the path of training data csv file')
 
 parser.add_argument('--csv_val', default='./data/IAPS_10-10-80_val3.csv', type=str,
@@ -91,7 +97,7 @@ parser.add_argument('--model_to_run', default=6, type=int, help='which model you
 parser.add_argument('--model_dir', default='./savedmodel/', type=str,
                     help='where to save the trained model')
 parser.add_argument('--model_name',
-                    default='base_model_conditioned_orientation.pth',
+                    default='base_model_acquisition.pth',
                     type=str, help='name of the trained model')
 
 parser.add_argument('--resume', default=None, type=str, help='the path to checkpoint')
@@ -100,18 +106,16 @@ parser.add_argument('--start_epoch', default=0, type=int, metavar='N', help='man
 parser.add_argument('--is_fine_tune', default=True, type=lambda x: (str(x).lower() == 'true'),
                     help='whether to apply fine tuning to the model')
 
-parser.add_argument('--file_name', default='base_model_vca_IAPS_quadrant.pth',
+parser.add_argument('--file_name', default='base_model_habituation_epoch100.pth',
                     type=str, help='name of the trained model')
-
-parser.add_argument('--manipulation', default=0.0, type=int, help='Probability to block out the unconditional stimulus')
 
 parser.add_argument('--gpu_ids', type=str, default='2', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
 
 parser.add_argument('--model_save_mode', type=int, default=3, help='1 : The code saves the model for every epoch '
-                                                                    '2 : The code saves the model when the loss decrease'
-                                                                    '3 : The code saves the initial model and the final model')
+                                                                   '2 : The code saves the model when the loss decrease'
+                                                                   '3 : The code saves the initial model and the final model')
 
-parser.add_argument('--random_seed', default=1, type=int,
+parser.add_argument('--random_seed', default=6, type=int,
                     help='This part is for controlling the random seed for reproductability')
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -323,77 +327,35 @@ def main():
 
     print("Test before training")
 
-    if len(args.gabor_dir2) <= 2:
+    dataloaders_test, dataset_sizes_test = acq_dataloader(args.data_dir, args.TRAIN, args.TRAIN2, args.TRAIN3,
+                                                          args.VAL, args.TEST,
+                                                          args.csv_train, args.csv_train2, args.csv_train3,
+                                                          args.csv_val, args.csv_test,
+                                                          args.batch_size, istrain=False,
+                                                          gabor_dir1=args.gabor_dir1,
+                                                          gabor_dir2=args.gabor_dir2,
+                                                          gabor_dir3=args.gabor_dir3)
 
-        dataloaders_test, dataset_sizes_test = cond_dataloader3(args.data_dir, args.TRAIN, args.TRAIN2, args.VAL,
-                                                                args.TEST,
-                                                                args.csv_train, args.csv_train2, args.csv_val,
-                                                                args.csv_test,
-                                                                args.batch_size, istrain=False,
-                                                                gabor_dir1=args.gabor_dir1,
-                                                                gabor_dir2=args.gabor_dir2,
-                                                                manipulation=args.manipulation)
+    cond_eval_model(dataloaders_test, dataset_sizes_test, args.TEST, model, criterion, device)
 
-        cond_eval_model(dataloaders_test, dataset_sizes_test, args.TEST, model, criterion, device)
+    # ---------------- Training-----------------------------#
+    print('-' * 10)
+    print("Preparing training data and it will take a while...")
+    dataloaders_train, dataset_sizes_train = acq_dataloader(args.data_dir, args.TRAIN, args.TRAIN2, args.TRAIN3,
+                                                            args.VAL, args.TEST,
+                                                            args.csv_train, args.csv_train2, args.csv_train3,
+                                                            args.csv_val, args.csv_test,
+                                                            args.batch_size, istrain=True,
+                                                            gabor_dir1=args.gabor_dir1,
+                                                            gabor_dir2=args.gabor_dir2,
+                                                            gabor_dir3=args.gabor_dir3)
 
-        # ---------------- Training-----------------------------#
-        print('-' * 10)
-        print("Preparing training data and it will take a while...")
-        dataloaders_train, dataset_sizes_train = cond_dataloader3(args.data_dir, args.TRAIN, args.TRAIN2, args.VAL,
-                                                                  args.TEST,
-                                                                  args.csv_train, args.csv_train2, args.csv_val,
-                                                                  args.csv_test,
-                                                                  args.batch_size, istrain=True,
-                                                                  gabor_dir1=args.gabor_dir1,
-                                                                  gabor_dir2=args.gabor_dir2,
-                                                                  manipulation=args.manipulation)
+    model = train_model(dataloaders_train, dataset_sizes_train, 'IAPS_Conditioning_Finetune',
+                        args.VAL, model, criterion, optimizer_ft, exp_lr_scheduler,
+                        args.epoch, device, start_epoch)
 
-        model = train_model(dataloaders_train, dataset_sizes_train, 'IAPS_Conditioning_Finetune',
-                            args.VAL, model, criterion, optimizer_ft, exp_lr_scheduler,
-                            args.epoch, device, start_epoch)
-
-        #    model = train_model(dataloaders_train, dataset_sizes_train, args.TRAIN,
-        #                        args.VAL, model, criterion, optimizer_ft, exp_lr_scheduler,
-        #                        args.epoch, device, start_epoch, is_gist, is_saliency, is_log)
-
-        # ----------------test-----------------------------#
-        cond_eval_model(dataloaders_test, dataset_sizes_test, args.TEST, model, criterion, device)
-
-
-    elif len(args.gabor_dir2) > 2:
-        dataloaders_test, dataset_sizes_test = cond_dataloader3(args.data_dir, args.TRAIN, args.TRAIN2, args.VAL,
-                                                                args.TEST,
-                                                                args.csv_train, args.csv_train2, args.csv_val,
-                                                                args.csv_test,
-                                                                args.batch_size, istrain=False,
-                                                                gabor_dir1=args.gabor_dir1,
-                                                                gabor_dir2=args.gabor_dir2,
-                                                                manipulation=args.manipulation)
-
-        cond_eval_model(dataloaders_test, dataset_sizes_test, args.TEST, model, criterion, device)
-
-        # ---------------- Training-----------------------------#
-        print('-' * 10)
-        print("Preparing training data and it will take a while...")
-        dataloaders_train, dataset_sizes_train = cond_dataloader3(args.data_dir, args.TRAIN, args.TRAIN2, args.VAL,
-                                                                  args.TEST,
-                                                                  args.csv_train, args.csv_train2, args.csv_val,
-                                                                  args.csv_test,
-                                                                  args.batch_size, istrain=True,
-                                                                  gabor_dir1=args.gabor_dir1,
-                                                                  gabor_dir2=args.gabor_dir2,
-                                                                  manipulation=args.manipulation)
-
-        model = train_model(dataloaders_train, dataset_sizes_train, 'IAPS_Conditioning_Finetune',
-                            args.VAL, model, criterion, optimizer_ft, exp_lr_scheduler,
-                            args.epoch, device, start_epoch)
-
-        #    model = train_model(dataloaders_train, dataset_sizes_train, args.TRAIN,
-        #                        args.VAL, model, criterion, optimizer_ft, exp_lr_scheduler,
-        #                        args.epoch, device, start_epoch, is_gist, is_saliency, is_log)
-
-        # ----------------test-----------------------------#
-        cond_eval_model(dataloaders_test, dataset_sizes_test, args.TEST, model, criterion, device)
+    # ----------------test-----------------------------#
+    cond_eval_model(dataloaders_test, dataset_sizes_test, args.TEST, model, criterion, device)
 
 
 if __name__ == '__main__':
