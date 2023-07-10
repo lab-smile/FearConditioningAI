@@ -1,23 +1,34 @@
 from __future__ import print_function, division
+
+# base libraries
+import time
+import os
+import random
+import copy
+import argparse
+
+# libraries for arithmetic
+import numpy as np
+import matplotlib
+from scipy.stats import pearsonr
+
+# libraries for pytorch
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim import lr_scheduler
-import matplotlib
 
-matplotlib.use('Agg')
-import time
-import os
-import copy
-from utils import reg_eval_model, save_checkpoint, load_checkpoint
+# project based libraries
+from utils import reg_eval_model, save_checkpoint
 from dataloader import reg_dataloader
-import argparse
-from scipy.stats import pearsonr
-import numpy as np
+from models.VGG_Model import VGG, VGG_Freeze_conv, VGG_BN_Freeze_conv, VGG_Freeze_conv_FC1, VGG_Freeze_conv_FC2, Visual_Cortex_Amygdala, Visual_Cortex_Amygdala_wo_Attention
+
+# cuda libraries
 from GPUtil import showUtilization as gpu_usage
 from numba import cuda
 
-from models.VGG_Model import VGG, VGG_Freeze_conv, VGG_BN_Freeze_conv, VGG_Freeze_conv_FC1, VGG_Freeze_conv_FC2, Visual_Cortex_Amygdala, Visual_Cortex_Amygdala_wo_Attention, VGG_Freeze_conv_FC2_attention, VGG_Freeze_conv_attention
+
+matplotlib.use('Agg')
 r"""This code trains the regression model for emotion decoding. In parser.add_argument, you need to fill out the 
     parameters you need for code to work. The difference of this code with train_finetuing & train_conditioning is the 
     input dimension. train_finetuning and train_conditioning has the quadrant input dimension, designed for conditioning.
@@ -46,26 +57,26 @@ r"""This code trains the regression model for emotion decoding. In parser.add_ar
 # Params
 parser = argparse.ArgumentParser(description='Parameters ')
 parser.add_argument('--data_dir', default='./data', type=str, help='the data root folder')
-parser.add_argument('--TRAIN', default='IAPS_120_no60_test', type=str, help='the folder of training data')
-parser.add_argument('--VAL', default='IAPS_120_no60_val', type=str, help='the folder of validation data')
-parser.add_argument('--TEST', default='IAPS_120_no60', type=str, help='the folder of test data')
+parser.add_argument('--TRAIN', default='IAPS_Balanced_train', type=str, help='the folder of training data')
+parser.add_argument('--VAL', default='IAPS_Balanced_val', type=str, help='the folder of validation data')
+parser.add_argument('--TEST', default='IAPS_Balanced_test', type=str, help='the folder of test data')
 
-parser.add_argument('--csv_train', default='./data/IAPS_120_no60_test.csv', type=str,
+parser.add_argument('--csv_train', default='./data/IAPS_Balanced_train.csv', type=str,
                     help='the path of training data csv file')
-parser.add_argument('--csv_val', default='./data/IAPS_120_no60_val.csv', type=str,
+parser.add_argument('--csv_val', default='./data/IAPS_Balanced_val.csv', type=str,
                     help='the path of training data csv file')
-parser.add_argument('--csv_test', default='./data/IAPS_120_no60.csv', type=str,
+parser.add_argument('--csv_test', default='./data/IAPS_Balanced_test.csv', type=str,
                     help='the path of training data csv file')
 
-parser.add_argument('--batch_size', default=128, type=int, help='batch size')
+parser.add_argument('--batch_size', default=64, type=int, help='batch size')
 parser.add_argument('--epoch', default=100, type=int, help='number of train epoches')
 # smaller lr is important or the output will be nan
-parser.add_argument('--lr', default=1e-4, type=float, help='initial learning rate for SGD')
+parser.add_argument('--lr', default=2e-4, type=float, help='initial learning rate for SGD')
 
 parser.add_argument('--model_dir', default='./savedmodel', type=str, help='where to save the trained model')
 parser.add_argument('--model_to_run', default=6, type=int, help='which model you want to run with experiment')
 parser.add_argument('--model_name',
-                    default='vca_IAPS_batch128_lr1e-4.pth',
+                    default='vca_IAPS_batch10_lr2e-4.pth',
                     type=str, help='name of the trained model')
 
 parser.add_argument('--resume', default=None, type=str, help='the path to checkpoint')
@@ -74,11 +85,13 @@ parser.add_argument('--start_epoch', default=1, type=int, metavar='N', help='man
 parser.add_argument('--is_fine_tune', default=True, type=lambda x: (str(x).lower() == 'true'),
                     help='whether to apply fine tuning to the model')
 
-parser.add_argument('--file_name',
-                    default='vca_ckvideo_batch128_lr2e-5_epoch45.pth',
-                    type=str, help='name of the trained model')
+parser.add_argument('--file_name',default='vca_ckvideo_batch128_lr2e-5_epoch20.pth', type=str,
+                    help='name of the trained model for fine-tuning')
 
 parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
+
+parser.add_argument('--random_seed', default=2, type=int,
+                    help='This part is for controlling the random seed for reproductability')
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -111,7 +124,6 @@ def train_model(dataloaders, dataset_sizes, TRAIN, VAL, model, criterion, optimi
 
     # for loop to train and validate the model
     for epoch in range(start_epoch, num_epochs):
-        logs = {}
         print('\n Epoch {}/{}'.format(epoch, num_epochs - 1))
         print('-' * 10)
 
@@ -158,6 +170,7 @@ def train_model(dataloaders, dataset_sizes, TRAIN, VAL, model, criterion, optimi
                     preds = outputs.reshape(labels.shape).cpu().detach().numpy()
                     preds_list.extend(preds)
 
+            # update the learning rate
             if phase == TRAIN:
                 scheduler.step()
 
@@ -168,10 +181,12 @@ def train_model(dataloaders, dataset_sizes, TRAIN, VAL, model, criterion, optimi
 
             print('{} Loss: {:.4f} R: {:.4f} R2: {:.4f}'.format(phase, epoch_loss, epoch_R, epoch_R2))
 
+            # initialize the validation variable
             if phase == VAL:
                 if epoch == 0 or epoch == start_epoch:
                     best_loss = epoch_loss
 
+            # updating the validation metric
             if phase == VAL and epoch_loss < best_loss:
                 best_R = epoch_R
                 best_loss = epoch_loss
@@ -200,6 +215,12 @@ def train_model(dataloaders, dataset_sizes, TRAIN, VAL, model, criterion, optimi
 def main():
     free_gpu_cache()
     args = parser.parse_args()
+
+    np.random.seed(args.random_seed)
+    random.seed(args.random_seed)
+    torch.manual_seed(args.random_seed)
+    os.environ["PYTHONHASHSEED"] = str(args.random_seed)
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # Create  the result directory to save the training result in the directory
@@ -253,10 +274,6 @@ def main():
             model = Visual_Cortex_Amygdala()
         elif args.model_to_run == 7:
             model = Visual_Cortex_Amygdala_wo_Attention()
-        elif args.model_to_run == 8:
-            model = VGG_Freeze_conv_FC2_attention()
-        elif args.model_to_run == 9:
-            model = VGG_Freeze_conv_attention()
 
     # Define the loss function and optimization method. If you change the momentum to 1.0, the gradient will explode and
     # give you unexpected results.
@@ -264,9 +281,8 @@ def main():
     optimizer_ft = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
 
     # Defining the learning rate decay.
-    exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft, step_size=30, gamma=0.1)
+    exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft, step_size=80, gamma=0.1)
     print(model)
-
     # Feed the model to the GPU device.
     model = model.to(device)
 
