@@ -1,24 +1,33 @@
 from __future__ import print_function, division
+
+# base libraries
+import time
+import os
+import random
+import copy
+import argparse
+
+# libraries for arithmetic
+import numpy as np
+import matplotlib
+from scipy.stats import pearsonr
+
+# libraries for pytorch
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim import lr_scheduler
-import matplotlib
 
-matplotlib.use('Agg')
-import time
-import os
-import copy
+# project based libraries
 from utils import reg_eval_model, save_checkpoint, load_checkpoint
 from dataloader import quadrant_finetune_dataloader
-import argparse
-from scipy.stats import pearsonr
-import numpy as np
+from models.VGG_Model import VGG,VGG_Freeze_conv, VGG_BN_Freeze_conv, VGG_Freeze_conv_FC1, VGG_Freeze_conv_FC2, Visual_Cortex_Amygdala, Visual_Cortex_Amygdala_wo_Attention
+
+# cuda libraries
 from numba import cuda
 from GPUtil import showUtilization as gpu_usage
 
-from models.VGG_Model import VGG,VGG_Freeze_conv, VGG_BN_Freeze_conv, VGG_Freeze_conv_FC1, VGG_Freeze_conv_FC2, Visual_Cortex_Amygdala, Visual_Cortex_Amygdala_wo_Attention, VGG_Freeze_conv_FC2_attention, VGG_Freeze_conv_attention
-
+matplotlib.use('Agg')
 r"""This code trains the regression model for finetuning the pretrained model for conditioning. In parser.add_argument, 
     you need to fill out the parameters you need for code to work. This part has almost the same mechanism as 
     'train_regression'. However, the difference is in the input dimension of the dataloader. The input dimension of the
@@ -49,15 +58,15 @@ r"""This code trains the regression model for finetuning the pretrained model fo
 # Params
 parser = argparse.ArgumentParser(description='Parameters ')
 parser.add_argument('--data_dir', default='./data', type=str, help='the data root folder')
-parser.add_argument('--TRAIN', default='IAPS_10-10-80_train3', type=str, help='the folder of training data')
-parser.add_argument('--VAL', default='IAPS_10-10-80_val3', type=str, help='the folder of validation data')
-parser.add_argument('--TEST', default='IAPS_10-10-80_test3', type=str, help='the folder of test data')
+parser.add_argument('--TRAIN', default='IAPS_All_Balanced_train', type=str, help='the folder of training data')
+parser.add_argument('--VAL', default='IAPS_All_Balanced_val', type=str, help='the folder of validation data')
+parser.add_argument('--TEST', default='IAPS_All_Balanced_test', type=str, help='the folder of test data')
 
-parser.add_argument('--csv_train', default='./data/IAPS_10-10-80_train3.csv', type=str,
+parser.add_argument('--csv_train', default='./data/IAPS_All_Balanced_train.csv', type=str,
                     help='the path of training data csv file')
-parser.add_argument('--csv_val', default='./data/IAPS_10-10-80_val3.csv', type=str,
+parser.add_argument('--csv_val', default='./data/IAPS_All_Balanced_val.csv', type=str,
                     help='the path of training data csv file')
-parser.add_argument('--csv_test', default='./data/IAPS_10-10-80_test3.csv', type=str,
+parser.add_argument('--csv_test', default='./data/IAPS_All_Balanced_test.csv', type=str,
                     help='the path of training data csv file')
 
 parser.add_argument('--batch_size', default=16, type=int, help='batch size')
@@ -80,13 +89,15 @@ parser.add_argument('--is_fine_tune', default=True, type=lambda x: (str(x).lower
                     help='whether to apply fine tuning to the model')
 
 parser.add_argument('--file_name',
-                    default='vca_IAPS_batch10_lr2e-4_epoch46.pth',
+                    default='vca_IAPS_batch10_lr2e-4_epoch48.pth',
                     type=str, help='name of the trained model')
 
-parser.add_argument('--gpu_ids', type=str, default='2', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
+parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
+parser.add_argument('--random_seed', default=1, type=int,
+                    help='This part is for controlling the random seed for reproductability')
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 torch.cuda.empty_cache()
 
@@ -165,10 +176,7 @@ def train_model(dataloaders, dataset_sizes, TRAIN, VAL, model, criterion, optimi
                     preds = outputs.reshape(labels.shape).cpu().detach().numpy()
                     preds_list.extend(preds)
 
-                    # clean the cache
-                    # del inputs, labels, outputs, loss
-                    # torch.cuda.empty_cache()
-
+            # update the learning rate
             if phase == TRAIN:
                 scheduler.step()
 
@@ -180,10 +188,12 @@ def train_model(dataloaders, dataset_sizes, TRAIN, VAL, model, criterion, optimi
             print('{} Loss: {:.4f} R: {:.4f} R2: {:.4f}'.format(
                 phase, epoch_loss, epoch_R, epoch_R2))
 
+            # initialize the validation variable
             if phase == VAL:
                 if epoch == 0 or epoch == start_epoch:
                     best_loss = epoch_loss
 
+            # updating the validation metric
             if phase == VAL and epoch_loss < best_loss: # loss or R
                 best_R = epoch_R
                 best_loss = epoch_loss
@@ -214,6 +224,12 @@ def train_model(dataloaders, dataset_sizes, TRAIN, VAL, model, criterion, optimi
 def main():
     free_gpu_cache()
     args = parser.parse_args()
+
+    np.random.seed(args.random_seed)
+    random.seed(args.random_seed)
+    torch.manual_seed(args.random_seed)
+    os.environ["PYTHONHASHSEED"] = str(args.random_seed)
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # Create  the result directory to save the training result in the directory
@@ -267,10 +283,6 @@ def main():
             model = Visual_Cortex_Amygdala()
         elif args.model_to_run == 7:
             model = Visual_Cortex_Amygdala_wo_Attention()
-        elif args.model_to_run == 8:
-            model = VGG_Freeze_conv_FC2_attention()
-        elif args.model_to_run == 9:
-            model = VGG_Freeze_conv_attention()
 
     # Define the loss function and optimization method. If you change the momentum to 1.0, the gradient will explode and
     # give you unexpected results.
