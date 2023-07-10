@@ -1,27 +1,34 @@
 from __future__ import print_function, division
+
+# base libraries
+import os
+import time
+import random
+import copy
+import argparse
+
+# libraries for arithmetic
+import numpy as np
+import matplotlib
+from scipy.stats import pearsonr
+
+# libraries for pytorch
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim import lr_scheduler
-from torchvision.transforms import transforms
-import matplotlib
-import pandas as pd
 
-matplotlib.use('Agg')
-import time
-import random
-import os
-import copy
+# project based libraries
 from utils import save_checkpoint, cond_eval_model
-from dataloader import cond_dataloader3
-import argparse
-from scipy.stats import pearsonr
-import numpy as np
+from dataloader import cond_dataloader
+from models.VGG_Model import VGG, VGG_Freeze_conv, VGG_BN_Freeze_conv, VGG_Freeze_conv_FC1, VGG_Freeze_conv_FC2, \
+    Visual_Cortex_Amygdala, Visual_Cortex_Amygdala_wo_Attention
+
+# cuda libraries
 from GPUtil import showUtilization as gpu_usage
 from numba import cuda
-from models.VGG_Model import VGG, VGG_Freeze_conv, VGG_BN_Freeze_conv, VGG_Freeze_conv_FC1, VGG_Freeze_conv_FC2, \
-    Visual_Cortex_Amygdala, Visual_Cortex_Amygdala_wo_Attention, VGG_Freeze_conv_FC2_attention
 
+matplotlib.use('Agg')
 r"""This code trains the regression model for emotion decoding. In parser.add_argument, you need to fill out the 
     parameters you need for code to work. 
 
@@ -55,34 +62,37 @@ parser.add_argument('--data_dir', default='./data', type=str, help='the data roo
 
 parser.add_argument('--gabor_dir1', action='store', dest='gabor_dir1', type=str, nargs='*',
                     default=['./data/gabor_patch_full/freq20/gabor-gaussian-45-freq20-cont50.png'],
-                    help="This part is usually for placing one CS+"
+                    help="This part is usually for placing one CS+ for unpleasant images"
                          "Examples: -i item1 item2, -i item3")
 
 parser.add_argument('--gabor_dir2', action='store', dest='gabor_dir2', type=str, nargs='*',
                     default=['./data/gabor_patch_full/freq20/gabor-gaussian-135-freq20-cont50.png'],
-                    help="This part is usually for placing CS-"
+                    help="This part is usually for placing CS+ for pleasant images"
                          "Examples: -i item1 item2, -i item3")
 
 parser.add_argument('--TRAIN', default='IAPS_Conditioning_Unpleasant2', type=str,
-                    help='the folder of training data')
+                    help='the folder of unpleasant data')
 parser.add_argument('--TRAIN2', default='IAPS_Conditioning_Pleasant2', type=str,
-                    help='the folder of training data')
+                    help='the folder of pleasant data')
 
+# These validation and test data does not matter much in the associative learning process.
 parser.add_argument('--VAL', default='IAPS_120_no60_val', type=str, help='the folder of validation data')
-parser.add_argument('--TEST', default='IAPS_120_no60', type=str, help='the folder of test data')
+parser.add_argument('--TEST', default='IAPS_120_no60_test', type=str, help='the folder of test data')
 
 parser.add_argument('--csv_train', default='./data/IAPS_Conditioning_Unpleasant2.csv', type=str,
-                    help='the path of training data csv file')
+                    help='the path of unpleasant data csv file')
 parser.add_argument('--csv_train2', default='./data/IAPS_Conditioning_Pleasant2.csv', type=str,
-                    help='the path of training data csv file')
+                    help='the path of pleasant data csv file')
 
+# These validation and test data does not matter much in the associative learning process.
 parser.add_argument('--csv_val', default='./data/IAPS_120_no60_val.csv', type=str,
-                    help='the path of training data csv file')
-parser.add_argument('--csv_test', default='./data/IAPS_120_no60.csv', type=str,
-                    help='the path of training data csv file')
+                    help='the path of validation data csv file')
+parser.add_argument('--csv_test', default='./data/IAPS_120_no60_test.csv', type=str,
+                    help='the path of test data csv file')
 
 parser.add_argument('--batch_size', default=10, type=int, help='batch size')
 parser.add_argument('--epoch', default=100, type=int, help='number of train epoches')
+
 # smaller lr is important or the output will be nan
 parser.add_argument('--lr', default=1e-4, type=float, help='initial learning rate for SGD')
 
@@ -90,6 +100,7 @@ parser.add_argument('--model_to_run', default=6, type=int, help='which model you
 
 parser.add_argument('--model_dir', default='./savedmodel/', type=str,
                     help='where to save the trained model')
+
 parser.add_argument('--model_name',
                     default='base_model_conditioned_orientation.pth',
                     type=str, help='name of the trained model')
@@ -100,22 +111,22 @@ parser.add_argument('--start_epoch', default=0, type=int, metavar='N', help='man
 parser.add_argument('--is_fine_tune', default=True, type=lambda x: (str(x).lower() == 'true'),
                     help='whether to apply fine tuning to the model')
 
-parser.add_argument('--file_name', default='base_model_vca_IAPS_quadrant.pth',
+parser.add_argument('--file_name', default='vca_IAPS_quadrant_batch16_lr1e-5_epoch91.pth',
                     type=str, help='name of the trained model')
 
 parser.add_argument('--manipulation', default=0.0, type=int, help='Probability to block out the unconditional stimulus')
 
-parser.add_argument('--gpu_ids', type=str, default='2', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
+parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
 
-parser.add_argument('--model_save_mode', type=int, default='1', help='1 : The code saves the model for every epoch '
-                                                                     '2 : The code saves the model when the loss decrease'
-                                                                     '3 : The code saves the initial model and the final model')
+parser.add_argument('--model_save_mode', type=int, default=1, help='1 : The code saves the model for every epoch '
+                                                                   '2 : The code saves the model when the loss decrease'
+                                                                   '3 : The code saves the initial model and the final model')
 
-parser.add_argument('--random_seed', default=1, type=int,
+parser.add_argument('--random_seed', default=0, type=int,
                     help='This part is for controlling the random seed for reproductability')
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 torch.cuda.empty_cache()
 
 
@@ -124,7 +135,6 @@ def free_gpu_cache():
     gpu_usage()
 
     torch.cuda.empty_cache()
-
     cuda.select_device(0)
     cuda.close()
     cuda.select_device(0)
@@ -193,6 +203,7 @@ def train_model(dataloaders, dataset_sizes, TRAIN, VAL, model, criterion, optimi
                     preds_list.extend(preds)
                     name_list.extend(name)
 
+            # update the learning rate
             if phase == TRAIN:
                 scheduler.step()
 
@@ -229,7 +240,7 @@ def train_model(dataloaders, dataset_sizes, TRAIN, VAL, model, criterion, optimi
                                                      args.model_name[:-4] + '_epoch' + str(best_epoch) + '.pth'))
                         print('Best epoch: {:} Best loss: {:.4f} Best R: {:.4f} '.format(best_epoch, best_loss, best_R))
 
-                # in save mode 3, the model saves the only the first and last conditioned model.
+                # in save mode 3, the model saves the only first and last conditioned model.
                 if args.model_save_mode == 3:
                     if epoch == 0 or epoch == int(args.epoch) - 1:
                         best_R = epoch_R
@@ -253,16 +264,18 @@ def train_model(dataloaders, dataset_sizes, TRAIN, VAL, model, criterion, optimi
 
     # load best model weights
     model.load_state_dict(best_model_wts)
-
     return model
 
 
 def main():
-    free_gpu_cache()
-    torch.manual_seed(parser.parse_args().random_seed)
-    random.seed(parser.parse_args().random_seed)
-
     args = parser.parse_args()
+
+    np.random.seed(args.random_seed)
+    random.seed(args.random_seed)
+    torch.manual_seed(args.random_seed)
+    os.environ["PYTHONHASHSEED"] = str(args.random_seed)
+
+    free_gpu_cache()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     if not os.path.exists(args.model_dir):
@@ -289,6 +302,7 @@ def main():
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
+    # if the mode is fine-tuning mode, the code will import the pretrained model, and load the model parameters
     elif args.is_fine_tune:
         print("=> loading old model '{}'".format(args.file_name))
         old_model = torch.load(os.path.join(args.model_dir, args.file_name), map_location='cuda:0')
@@ -311,8 +325,6 @@ def main():
             model = Visual_Cortex_Amygdala()
         elif args.model_to_run == 7:
             model = Visual_Cortex_Amygdala_wo_Attention()
-        elif args.model_to_run == 8:
-            model = VGG_Freeze_conv_FC2_attention()
 
     criterion = nn.MSELoss()
     optimizer_ft = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
@@ -325,72 +337,68 @@ def main():
 
     if len(args.gabor_dir2) <= 2:
 
-        dataloaders_test, dataset_sizes_test = cond_dataloader3(args.data_dir, args.TRAIN, args.TRAIN2, args.VAL,
-                                                                args.TEST,
-                                                                args.csv_train, args.csv_train2, args.csv_val,
-                                                                args.csv_test,
-                                                                args.batch_size, istrain=False,
-                                                                gabor_dir1=args.gabor_dir1,
-                                                                gabor_dir2=args.gabor_dir2,
-                                                                manipulation=args.manipulation)
+        dataloaders_test, dataset_sizes_test = cond_dataloader(args.data_dir, args.TRAIN, args.TRAIN2, args.VAL,
+                                                               args.TEST,
+                                                               args.csv_train, args.csv_train2, args.csv_val,
+                                                               args.csv_test,
+                                                               args.batch_size, istrain=False,
+                                                               gabor_dir1=args.gabor_dir1,
+                                                               gabor_dir2=args.gabor_dir2,
+                                                               manipulation=args.manipulation,
+                                                               seed=args.random_seed)
 
         cond_eval_model(dataloaders_test, dataset_sizes_test, args.TEST, model, criterion, device)
 
         # ---------------- Training-----------------------------#
         print('-' * 10)
         print("Preparing training data and it will take a while...")
-        dataloaders_train, dataset_sizes_train = cond_dataloader3(args.data_dir, args.TRAIN, args.TRAIN2, args.VAL,
-                                                                  args.TEST,
-                                                                  args.csv_train, args.csv_train2, args.csv_val,
-                                                                  args.csv_test,
-                                                                  args.batch_size, istrain=True,
-                                                                  gabor_dir1=args.gabor_dir1,
-                                                                  gabor_dir2=args.gabor_dir2,
-                                                                  manipulation=args.manipulation)
+        dataloaders_train, dataset_sizes_train = cond_dataloader(args.data_dir, args.TRAIN, args.TRAIN2, args.VAL,
+                                                                 args.TEST,
+                                                                 args.csv_train, args.csv_train2, args.csv_val,
+                                                                 args.csv_test,
+                                                                 args.batch_size, istrain=True,
+                                                                 gabor_dir1=args.gabor_dir1,
+                                                                 gabor_dir2=args.gabor_dir2,
+                                                                 manipulation=args.manipulation,
+                                                                 seed=args.random_seed)
 
         model = train_model(dataloaders_train, dataset_sizes_train, 'IAPS_Conditioning_Finetune',
                             args.VAL, model, criterion, optimizer_ft, exp_lr_scheduler,
                             args.epoch, device, start_epoch)
-
-        #    model = train_model(dataloaders_train, dataset_sizes_train, args.TRAIN,
-        #                        args.VAL, model, criterion, optimizer_ft, exp_lr_scheduler,
-        #                        args.epoch, device, start_epoch, is_gist, is_saliency, is_log)
 
         # ----------------test-----------------------------#
         cond_eval_model(dataloaders_test, dataset_sizes_test, args.TEST, model, criterion, device)
 
 
     elif len(args.gabor_dir2) > 2:
-        dataloaders_test, dataset_sizes_test = cond_dataloader3(args.data_dir, args.TRAIN, args.TRAIN2, args.VAL,
-                                                                args.TEST,
-                                                                args.csv_train, args.csv_train2, args.csv_val,
-                                                                args.csv_test,
-                                                                args.batch_size, istrain=False,
-                                                                gabor_dir1=args.gabor_dir1,
-                                                                gabor_dir2=args.gabor_dir2,
-                                                                manipulation=args.manipulation)
+        dataloaders_test, dataset_sizes_test = cond_dataloader(args.data_dir, args.TRAIN, args.TRAIN2, args.VAL,
+                                                               args.TEST,
+                                                               args.csv_train, args.csv_train2, args.csv_val,
+                                                               args.csv_test,
+                                                               args.batch_size, istrain=False,
+                                                               gabor_dir1=args.gabor_dir1,
+                                                               gabor_dir2=args.gabor_dir2,
+                                                               manipulation=args.manipulation,
+                                                               seed=args.random_seed)
 
         cond_eval_model(dataloaders_test, dataset_sizes_test, args.TEST, model, criterion, device)
 
         # ---------------- Training-----------------------------#
         print('-' * 10)
         print("Preparing training data and it will take a while...")
-        dataloaders_train, dataset_sizes_train = cond_dataloader3(args.data_dir, args.TRAIN, args.TRAIN2, args.VAL,
-                                                                  args.TEST,
-                                                                  args.csv_train, args.csv_train2, args.csv_val,
-                                                                  args.csv_test,
-                                                                  args.batch_size, istrain=True,
-                                                                  gabor_dir1=args.gabor_dir1,
-                                                                  gabor_dir2=args.gabor_dir2,
-                                                                  manipulation=args.manipulation)
+        dataloaders_train, dataset_sizes_train = cond_dataloader(args.data_dir, args.TRAIN, args.TRAIN2, args.VAL,
+                                                                 args.TEST,
+                                                                 args.csv_train, args.csv_train2, args.csv_val,
+                                                                 args.csv_test,
+                                                                 args.batch_size, istrain=True,
+                                                                 gabor_dir1=args.gabor_dir1,
+                                                                 gabor_dir2=args.gabor_dir2,
+                                                                 manipulation=args.manipulation,
+                                                                 seed=args.random_seed)
 
         model = train_model(dataloaders_train, dataset_sizes_train, 'IAPS_Conditioning_Finetune',
                             args.VAL, model, criterion, optimizer_ft, exp_lr_scheduler,
                             args.epoch, device, start_epoch)
-
-        #    model = train_model(dataloaders_train, dataset_sizes_train, args.TRAIN,
-        #                        args.VAL, model, criterion, optimizer_ft, exp_lr_scheduler,
-        #                        args.epoch, device, start_epoch, is_gist, is_saliency, is_log)
 
         # ----------------test-----------------------------#
         cond_eval_model(dataloaders_test, dataset_sizes_test, args.TEST, model, criterion, device)

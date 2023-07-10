@@ -62,9 +62,9 @@ parser.add_argument('--gabor_to_extract', action='store', dest='gabor_to_extract
                          "Examples: -i item1 item2, -i item3")
 
 parser.add_argument('--model_dir', default='./savedmodel', type=str, help='where to save the trained model')
-parser.add_argument('--model_name', default='base_model_conditioned_orientation_epoch20.pth',
+parser.add_argument('--model_name', default='base_model_vca_IAPS_quadrant.pth',
                     type=str, help='name of the trained model；')
-parser.add_argument('--module_to_extract', default='VCA_Features', type=str,
+parser.add_argument('--module_to_extract', default='VCA_FC', type=str,
                     help='There are 5 different modules to extract. '
 
                          '\nVCA_Features : This part is the feature extractor part from the VGG16 '
@@ -178,5 +178,4 @@ for file_name in file_list:
                                                                   'orientation',
                                                                   'activation'])
                     file_output = pd.concat([file_output, filter_output], ignore_index=True)
-            print('hi')
         file_output.to_csv(os.path.join(result_dir, file_name[:-4] + '.csv'))
