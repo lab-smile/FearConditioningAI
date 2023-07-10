@@ -24,7 +24,14 @@ model_urls = {
 
 
 class VGG(nn.Module):
-
+    r"""VGG
+    `"Very Deep Convolutional Networks For Large-Scale Image Recognition" <https://arxiv.org/pdf/1409.1556.pdf>`_
+    This is base model. It receives the output from "make_layers" function for feature extractor.
+    Args:
+        features (nn.Module): This has to be the feature extractor module from the VGG.
+        num_classes (int): Number of output variables.
+        init_weights (bool): If True, it re-initialize the weights before training.
+    """
     def __init__(self, features, num_classes=1000, init_weights=True):
         super(VGG, self).__init__()
         self.features = features
@@ -63,6 +70,12 @@ class VGG(nn.Module):
 
 
 def make_layers(cfg, batch_norm=False):
+    r"""make_layers
+        This builds the feature extractor for the VGG models. Please refer to the configurations.
+        Args:
+            cfg (dict): Key with configuration code and Value with layer numbers.
+            batch_norm (bool): If True, BatchNorm 2D is applied between Conv and Relu layer.
+        """
     layers = []
     in_channels = 3
     for v in cfg:
@@ -87,6 +100,16 @@ cfgs = {
 
 
 def _vgg(arch, cfg, batch_norm, pretrained, progress, **kwargs):
+    r"""VGG
+        `"Very Deep Convolutional Networks For Large-Scale Image Recognition" <https://arxiv.org/pdf/1409.1556.pdf>`_
+        Function of building base model with VGG class
+        Args:
+            arch (str): String value which contains a key for the model url in Pytorch.
+            cfg (dict): Key with configuration code and Value with layer numbers.
+            batch_norm (bool): If True, BatchNorm 2D is applied between Conv and Relu layer.
+            pretrained (bool): If True, imports the pretrained model from Pytorch based on the 'arch' key value
+            progress (bool): If True, displays a progress bar of the download to stderr
+        """
     if pretrained:
         kwargs['init_weights'] = False
     model = VGG(make_layers(cfgs[cfg], batch_norm=batch_norm), **kwargs)
@@ -99,8 +122,6 @@ def _vgg(arch, cfg, batch_norm, pretrained, progress, **kwargs):
 
 def _vgg16(pretrained=False, progress=True, **kwargs):
     r"""VGG 16-layer model (configuration "D")
-    `"Very Deep Convolutional Networks For Large-Scale Image Recognition" <https://arxiv.org/pdf/1409.1556.pdf>`_
-
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
         progress (bool): If True, displays a progress bar of the download to stderr
@@ -110,7 +131,6 @@ def _vgg16(pretrained=False, progress=True, **kwargs):
 
 def _vgg16_bn(pretrained=False, progress=True, **kwargs):
     r"""VGG 16-layer model (configuration "D") with batch normalization
-    `"Very Deep Convolutional Networks For Large-Scale Image Recognition" <https://arxiv.org/pdf/1409.1556.pdf>`_
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
         progress (bool): If True, displays a progress bar of the download to stderr
@@ -119,17 +139,23 @@ def _vgg16_bn(pretrained=False, progress=True, **kwargs):
 
 
 def vgg16_ori(is_freeze=True):
-    # Load the pretrained model from pytorch
+    r"""VGG 16-layer model (configuration "D") with layers frozen
+        Args:
+            is_freeze (bool): If True, the model parameters are all frozen.
+        """
     model = _vgg16(pretrained=True)
 
     # Freeze training for all layers except for the final layer
     for param in model.parameters():
         param.requires_grad = not is_freeze
-
     return model
 
 
 def vgg16_bn_ori(is_freeze=True):
+    r"""VGG 16-layer model (configuration "D") with batch normalization and layer frozen
+        Args:
+            is_freeze (bool): If True, the model parameters are all frozen.
+        """
     # Load the pretrained model from pytorch
     model = _vgg16_bn(pretrained=True)
 
@@ -141,19 +167,13 @@ def vgg16_bn_ori(is_freeze=True):
 
 
 class VGG_Freeze_conv(nn.Module):
-    """
-    VGG-16 based network. The weights except for the last layer is frozen.
-    In addition, the output label is replaced as single node output.
-    The single output predicts the valence of the natural input.
-
-    """
+    r"""VGG 16-layer model (configuration "D") with only feature extractor frozen.
+        Args:
+            is_freeze (bool): If True, the model parameters in feature extractor modules are frozen.
+        """
 
     def __init__(self):
         super(VGG_Freeze_conv, self).__init__()
-        """
-        Args:
-
-        """
         self.vgg = vgg16_ori()
 
         for param in self.vgg.parameters():
@@ -169,19 +189,12 @@ class VGG_Freeze_conv(nn.Module):
 
 
 class VGG_BN_Freeze_conv(nn.Module):
-    """
-    VGG-16 based network. The weights except for the last layer is frozen.
-    In addition, the output label is replaced as single node output.
-    The single output predicts the valence of the natural input.
-
-    """
+    r"""VGG 16-layer model (configuration "D") with batch normalization & only feature extractor frozen.
+        Args:
+        """
 
     def __init__(self):
         super(VGG_BN_Freeze_conv, self).__init__()
-        """
-        Args:
-
-        """
         self.vgg = vgg16_bn_ori()
 
         for param in self.vgg.parameters():
@@ -197,19 +210,12 @@ class VGG_BN_Freeze_conv(nn.Module):
 
 
 class VGG_Freeze_conv_FC1(nn.Module):
-    """
-    VGG-16 based network. The weights except for the last layer is frozen.
-    In addition, the output label is replaced as single node output.
-    The single output predicts the valence of the natural input.
-
-    """
+    r"""VGG 16-layer model (configuration "D") with additional fully connected layer & only feature extractor frozen.
+            Args:
+            """
 
     def __init__(self):
         super(VGG_Freeze_conv_FC1, self).__init__()
-        """
-        Args:
-
-        """
         self.vgg = vgg16_ori()
 
         for param in self.vgg.parameters():
@@ -228,19 +234,12 @@ class VGG_Freeze_conv_FC1(nn.Module):
 
 
 class VGG_Freeze_conv_FC2(nn.Module):
-    """
-    VGG-16 based network. The weights except for the last layer is frozen.
-    In addition, the output label is replaced as single node output.
-    The single output predicts the valence of the natural input.
-
-    """
+    r"""VGG 16-layer model (configuration "D") with 2 additional fully connected layers & feature extractor frozen.
+        Args:
+        """
 
     def __init__(self):
         super(VGG_Freeze_conv_FC2, self).__init__()
-        """
-        Args:
-
-        """
         self.vgg = vgg16_ori()
 
         for param in self.vgg.parameters():
@@ -262,16 +261,20 @@ class VGG_Freeze_conv_FC2(nn.Module):
 
 
 class Visual_Cortex_Amygdala(nn.Module):
-    """
-    This class is the one type, but final version of visual cortex amygdala model.
-    The model consists of 2 pathways, highroad and lowroad.
+    r"""Visual Cortex Amygdala model
+        This Visual Cortex Amygdala model is the one type out of several variations, but final version.
+        The model consists of 2 pathways, highroad (main road) and middleroad(shortcut pathway).
 
-    High Road is the normal ventral stream pathway, which is the VGG-16 model without the last layer in this case.
-    Low Road is the short cut pathway which models the affective system modulating the ventral visual pathway.
+        High Road is the normal ventral stream pathway, which is the VGG-16 model without the last layer in this case.
+        Middle Road is the shortcut pathway which models the affective system modulating the ventral visual pathway.
 
-    The attention algorithm and short cut pathway defined by the model was effective in reproducing behavioral results
-    from the empirical experiments.
-    """
+        The attention algorithm and shortcut pathway defined by the model was effective in reproducing behavioral
+        results from the empirical experiments.
+
+            Args:
+                lowfea_VGGLayer (int): layer number index of where the shortcut pathway starts
+                highfea_VGGLayer (int): depreciated
+            """
 
     def __init__(self, lowfea_VGGlayer=10, highfea_VGGlayer=36):
         super(Visual_Cortex_Amygdala, self).__init__()
@@ -286,64 +289,64 @@ class Visual_Cortex_Amygdala(nn.Module):
         self.lowfea_VGGlayer = lowfea_VGGlayer
         self.highfea_VGGlayer = highfea_VGGlayer
 
-        # This section is defining the parts for the bottom-up attention module. (Low Road)
-        self.VGG_Lowroad = self.vgg.features[:self.lowfea_VGGlayer]
+        # This section is defining the parts for the bottom-up attention module. (Middle Road)
+        self.VGG_Middleroad = self.vgg.features[:self.lowfea_VGGlayer]
 
-        # Max Pooling layers consisting the low road.
-        self.Lowroad_MaxPool = nn.MaxPool2d(kernel_size=29, stride=14, padding=0, dilation=1, ceil_mode=False)
+        # Max Pooling layers consisting the middle road.
+        self.Middleroad_MaxPool = nn.MaxPool2d(kernel_size=29, stride=14, padding=0, dilation=1, ceil_mode=False)
         self.Global_MaxPool = nn.AdaptiveMaxPool2d(2)
         self.MaxPool1 = nn.MaxPool2d(kernel_size=5, stride=3, padding=0)
         self.MaxPool2 = nn.MaxPool2d(kernel_size=9, stride=5, padding=0)
         self.MaxPool3 = nn.MaxPool2d(kernel_size=13, stride=7, padding=0)
 
-        # Adaptive Pooling layers consisting the low road.
+        # Adaptive Pooling layers consisting the middle road.
         self.Global_AdaptivePool1 = nn.AdaptiveAvgPool2d(1)
         self.Global_AdaptivePool2 = nn.AdaptiveAvgPool2d(2)
 
         # Efficient Channel Attention (ECA) Module.
         self.ECA_Module = eca_layer()
-        Lowroad_FC_input_size = 1024
+        Middleroad_FC_input_size = 1024
 
         # This section is the Fully Connected Layers which computes the high dimensional features computed based on the
         # bottom-up attention module.
-        self.VCA_Lowroad = self.Lowroad_FC(Lowroad_FC_input_size)
+        self.VCA_Middleroad = self.Middleroad_FC(Middleroad_FC_input_size)
 
         # This section is defining the parts for the high dimensional areas and modifying the last layer (High Road)
         self.VCA_Highroad = self.vgg
         self.VCA_Highroad.classifier = nn.Sequential(
             *list(self.vgg.children())[2][:-1])  # Filter all the layers except the last layer of VGG
 
-        # High road output size is 4096, and Low road output size is 512
-        Highroad_Lowroad_FC_input_size = 4096 + 512
+        # High road output size is 4096, and Middle road output size is 512
+        Highroad_Middleroad_FC_input_size = 4096 + 512
 
         # Last fully connected layers which computes the features from high road and low road
-        self.VCA_FC = self.Highroad_Lowroad_FC(Highroad_Lowroad_FC_input_size)
+        self.VCA_FC = self.Highroad_Middleroad_FC(Highroad_Middleroad_FC_input_size)
 
-    def Lowroad_FC(self, input_size):
+    def Middleroad_FC(self, input_size):
         """
         :param input_size: in this model, it is pre-determined as 1024, because the concatenated output size of the
         bottom-up attention module is 1024.
-        :return: the Sequential Layers for lowroad fully connected layers.
+        :return: the Sequential Layers for Middleroad fully connected layers.
         """
-        Lowroad_FC = nn.Sequential(
+        Middleroad_FC = nn.Sequential(
             nn.Linear(input_size, 1024), nn.ReLU(inplace=True), nn.Dropout(p=0.5),
             nn.Linear(1024, 512), nn.ReLU(inplace=True), nn.Dropout(p=0.5),
         )
-        return Lowroad_FC
+        return Middleroad_FC
 
-    def Highroad_Lowroad_FC(self, input_size):
+    def Highroad_Middleroad_FC(self, input_size):
         """
-        :param input_size: The output of the highroad is 4096 and lowroad is 512. Therefore, the input size is
+        :param input_size: The output of the highroad is 4096 and middleroad is 512. Therefore, the input size is
         determined as 4608)
         :return: the Sequential Layers for the last fully connected network of the model.
         """
-        Highroad_Lowroad_FC = nn.Sequential(
+        Highroad_Middleroad_FC = nn.Sequential(
             nn.Linear(input_size, 1024), nn.ReLU(inplace=True), nn.Dropout(p=0.5),
             nn.Linear(1024, 1024), nn.ReLU(inplace=True), nn.Dropout(p=0.5),
             nn.Linear(1024, 1),
             nn.Sigmoid()
         )
-        return Highroad_Lowroad_FC
+        return Highroad_Middleroad_FC
 
     def forward(self, x):
         """
@@ -359,14 +362,14 @@ class Visual_Cortex_Amygdala(nn.Module):
         y_Highroad_output = self.VCA_Highroad(input_image)
 
         # computed output of early layers in VGG-16 model to create input for bottom-up attention module.
-        y_Lowroad = self.VGG_Lowroad(input_image)
+        y_Middleroad = self.VGG_Middleroad(input_image)
 
         # compute the each part of bottom-up attention module
-        y_Lowroad_MaxPool = self.Lowroad_MaxPool(y_Lowroad)
-        y_Global_MaxPool = self.Global_MaxPool(y_Lowroad)
-        y_MaxPool1 = self.MaxPool1(y_Lowroad)
-        y_MaxPool2 = self.MaxPool2(y_Lowroad)
-        y_MaxPool3 = self.MaxPool3(y_Lowroad)
+        y_Middleroad_MaxPool = self.Middleroad_MaxPool(y_Middleroad)
+        y_Global_MaxPool = self.Global_MaxPool(y_Middleroad)
+        y_MaxPool1 = self.MaxPool1(y_Middleroad)
+        y_MaxPool2 = self.MaxPool2(y_Middleroad)
+        y_MaxPool3 = self.MaxPool3(y_Middleroad)
 
         y_MaxPool1_Global_Adaptive_Pool2 = self.Global_AdaptivePool2(y_MaxPool1)
         y_MaxPool2_Global_Adaptive_Pool2 = self.Global_AdaptivePool2(y_MaxPool2)
@@ -385,35 +388,40 @@ class Visual_Cortex_Amygdala(nn.Module):
         # change the dimensionality of the 2 tensors before concatenation
         y_eca_module_output_Global_Adaptive_Pool1 = y_eca_module_output_Global_Adaptive_Pool1.view(
             y_eca_module_output_Global_Adaptive_Pool1.size(0), -1)
-        y_Lowroad_MaxPool = y_Lowroad_MaxPool.view(y_Lowroad_MaxPool.size(0), -1)
+        y_Middleroad_MaxPool = y_Middleroad_MaxPool.view(y_Middleroad_MaxPool.size(0), -1)
 
         # concatenate the computed features from the attention module to feed the fully connected network in lowroad.
-        y_Bottom_Up_Attention_Feature = torch.cat([y_Lowroad_MaxPool, y_eca_module_output_Global_Adaptive_Pool1], dim=1)
+        y_Bottom_Up_Attention_Feature = torch.cat([y_Middleroad_MaxPool, y_eca_module_output_Global_Adaptive_Pool1], dim=1)
 
         # fully connected network of the lowroad.
-        y_Lowroad_output = self.VCA_Lowroad(y_Bottom_Up_Attention_Feature)
+        y_Middleroad_output = self.VCA_Middleroad(y_Bottom_Up_Attention_Feature)
 
         # concatenate the 1 dimensional feature tensor from high road and low road.
-        Highroad_Lowroad_input = torch.cat([y_Highroad_output, y_Lowroad_output], dim=1)
+        Highroad_Middleroad_input = torch.cat([y_Highroad_output, y_Middleroad_output], dim=1)
 
         # last fully connected network to compute the high dimensional features based on the low road and high road
         # features.
-        y_Highroad_Lowroad_FC = self.VCA_FC(Highroad_Lowroad_input)
+        y_Highroad_Middleroad_FC = self.VCA_FC(Highroad_Middleroad_input)
 
-        return y_Highroad_Lowroad_FC
+        return y_Highroad_Middleroad_FC
 
 
 class Visual_Cortex_Amygdala_wo_Attention(nn.Module):
-    """
-    This class is the one type, but final version of visual cortex amygdala model.
-    The model consists of 2 pathways, highroad and lowroad.
+    r"""Visual Cortex Amygdala model wo Attention
+        This Visual Cortex Amygdala model is the one type out of several variations, but final version.
+        The model consists of 2 pathways, highroad (main road) and middleroad(shortcut pathway).
+        Only difference with the previous model is the existence of attention module.
 
-    High Road is the normal ventral stream pathway, which is the VGG-16 model without the last layer in this case.
-    Low Road is the short cut pathway which models the affective system modulating the ventral visual pathway.
+        High Road is the normal ventral stream pathway, which is the VGG-16 model without the last layer in this case.
+        Middle Road is the shortcut pathway which models the affective system modulating the ventral visual pathway.
 
-    The attention algorithm and short cut pathway defined by the model was effective in reproducing behavioral results
-    from the empirical experiments.
-    """
+        The attention algorithm and shortcut pathway defined by the model was effective in reproducing behavioral
+        results from the empirical experiments.
+
+            Args:
+                lowfea_VGGLayer (int): layer number index of where the shortcut pathway starts
+                highfea_VGGLayer (int): depreciated
+            """
 
     def __init__(self, lowfea_VGGlayer=10, highfea_VGGlayer=36):
         super(Visual_Cortex_Amygdala_wo_Attention, self).__init__()
@@ -428,63 +436,63 @@ class Visual_Cortex_Amygdala_wo_Attention(nn.Module):
         self.lowfea_VGGlayer = lowfea_VGGlayer
         self.highfea_VGGlayer = highfea_VGGlayer
 
-        # This section is defining the parts for the bottom-up attention module. (Low Road)
-        self.VGG_Lowroad = self.vgg.features[:self.lowfea_VGGlayer]
+        # This section is defining the parts for the bottom-up attention module. (Middle Road)
+        self.VGG_Middleroad = self.vgg.features[:self.lowfea_VGGlayer]
 
-        # Max Pooling layers consisting the low road.
-        self.Lowroad_MaxPool = nn.MaxPool2d(kernel_size=29, stride=14, padding=0, dilation=1, ceil_mode=False)
+        # Max Pooling layers consisting the middle road.
+        self.Middleroad_MaxPool = nn.MaxPool2d(kernel_size=29, stride=14, padding=0, dilation=1, ceil_mode=False)
         self.Global_MaxPool = nn.AdaptiveMaxPool2d(2)
         self.MaxPool1 = nn.MaxPool2d(kernel_size=5, stride=3, padding=0)
         self.MaxPool2 = nn.MaxPool2d(kernel_size=9, stride=5, padding=0)
         self.MaxPool3 = nn.MaxPool2d(kernel_size=13, stride=7, padding=0)
 
-        # Adaptive Pooling layers consisting the low road.
+        # Adaptive Pooling layers consisting the middle road.
         self.Global_AdaptivePool1 = nn.AdaptiveAvgPool2d(1)
         self.Global_AdaptivePool2 = nn.AdaptiveAvgPool2d(2)
 
         # Efficient Channel Attention (ECA) Module.
-        Lowroad_FC_input_size = 1024
+        Middleroad_FC_input_size = 1024
 
         # This section is the Fully Connected Layers which computes the high dimensional features computed based on the
         # bottom-up attention module.
-        self.VCA_Lowroad = self.Lowroad_FC(Lowroad_FC_input_size)
+        self.VCA_Middleroad = self.Middleroad_FC(Middleroad_FC_input_size)
 
         # This section is defining the parts for the high dimensional areas and modifying the last layer (High Road)
         self.VCA_Highroad = self.vgg
         self.VCA_Highroad.classifier = nn.Sequential(
             *list(self.vgg.children())[2][:-1])  # Filter all the layers except the last layer of VGG
 
-        # High road output size is 4096, and Low road output size is 512
-        Highroad_Lowroad_FC_input_size = 4096 + 512
+        # High road output size is 4096, and Middle road output size is 512
+        Highroad_Middleroad_FC_input_size = 4096 + 512
 
         # Last fully connected layers which computes the features from high road and low road
-        self.VCA_FC = self.Highroad_Lowroad_FC(Highroad_Lowroad_FC_input_size)
+        self.VCA_FC = self.Highroad_Middleroad_FC(Highroad_Middleroad_FC_input_size)
 
-    def Lowroad_FC(self, input_size):
+    def Middleroad_FC(self, input_size):
         """
         :param input_size: in this model, it is pre-determined as 1024, because the concatenated output size of the
         bottom-up attention module is 1024.
-        :return: the Sequential Layers for lowroad fully connected layers.
+        :return: the Sequential Layers for middleroad fully connected layers.
         """
-        Lowroad_FC = nn.Sequential(
+        Middleroad_FC = nn.Sequential(
             nn.Linear(input_size, 1024), nn.ReLU(inplace=True), nn.Dropout(p=0.5),
             nn.Linear(1024, 512), nn.ReLU(inplace=True), nn.Dropout(p=0.5),
         )
-        return Lowroad_FC
+        return Middleroad_FC
 
-    def Highroad_Lowroad_FC(self, input_size):
+    def Highroad_Middleroad_FC(self, input_size):
         """
-        :param input_size: The output of the highroad is 4096 and lowroad is 512. Therefore, the input size is
+        :param input_size: The output of the highroad is 4096 and middleroad is 512. Therefore, the input size is
         determined as 4608)
         :return: the Sequential Layers for the last fully connected network of the model.
         """
-        Highroad_Lowroad_FC = nn.Sequential(
+        Highroad_Middleroad_FC = nn.Sequential(
             nn.Linear(input_size, 1024), nn.ReLU(inplace=True), nn.Dropout(p=0.5),
             nn.Linear(1024, 1024), nn.ReLU(inplace=True), nn.Dropout(p=0.5),
             nn.Linear(1024, 1),
             nn.Sigmoid()
         )
-        return Highroad_Lowroad_FC
+        return Highroad_Middleroad_FC
 
     def forward(self, x):
         """
@@ -500,14 +508,14 @@ class Visual_Cortex_Amygdala_wo_Attention(nn.Module):
         y_Highroad_output = self.VCA_Highroad(input_image)
 
         # computed output of early layers in VGG-16 model to create input for bottom-up attention module.
-        y_Lowroad = self.VGG_Lowroad(input_image)
+        y_Middleroad = self.VGG_Middleroad(input_image)
 
-        # compute the each part of bottom-up attention module
-        y_Lowroad_MaxPool = self.Lowroad_MaxPool(y_Lowroad)
-        y_Global_MaxPool = self.Global_MaxPool(y_Lowroad)
-        y_MaxPool1 = self.MaxPool1(y_Lowroad)
-        y_MaxPool2 = self.MaxPool2(y_Lowroad)
-        y_MaxPool3 = self.MaxPool3(y_Lowroad)
+        # compute each part of bottom-up attention module
+        y_Middleroad_MaxPool = self.Middleroad_MaxPool(y_Middleroad)
+        y_Global_MaxPool = self.Global_MaxPool(y_Middleroad)
+        y_MaxPool1 = self.MaxPool1(y_Middleroad)
+        y_MaxPool2 = self.MaxPool2(y_Middleroad)
+        y_MaxPool3 = self.MaxPool3(y_Middleroad)
 
         y_MaxPool1_Global_Adaptive_Pool2 = self.Global_AdaptivePool2(y_MaxPool1)
         y_MaxPool2_Global_Adaptive_Pool2 = self.Global_AdaptivePool2(y_MaxPool2)
@@ -524,107 +532,21 @@ class Visual_Cortex_Amygdala_wo_Attention(nn.Module):
         # change the dimensionality of the 2 tensors before concatenation
         y_eca_module_output_Global_Adaptive_Pool1 = y_eca_module_output_Global_Adaptive_Pool1.view(
             y_eca_module_output_Global_Adaptive_Pool1.size(0), -1)
-        y_Lowroad_MaxPool = y_Lowroad_MaxPool.view(y_Lowroad_MaxPool.size(0), -1)
+        y_Middleroad_MaxPool = y_Middleroad_MaxPool.view(y_Middleroad_MaxPool.size(0), -1)
 
-        # concatenate the computed features from the attention module to feed the fully connected network in lowroad.
-        y_Bottom_Up_Attention_Feature = torch.cat([y_Lowroad_MaxPool, y_eca_module_output_Global_Adaptive_Pool1], dim=1)
+        # concatenate the computed features from the attention module to feed the fully connected network in middleroad.
+        y_Bottom_Up_Attention_Feature = torch.cat([y_Middleroad_MaxPool, y_eca_module_output_Global_Adaptive_Pool1], dim=1)
 
-        # fully connected network of the lowroad.
-        y_Lowroad_output = self.VCA_Lowroad(y_Bottom_Up_Attention_Feature)
+        # fully connected network of the middleroad.
+        y_Middleroad_output = self.VCA_Middleroad(y_Bottom_Up_Attention_Feature)
 
-        # concatenate the 1 dimensional feature tensor from high road and low road.
-        Highroad_Lowroad_input = torch.cat([y_Highroad_output, y_Lowroad_output], dim=1)
+        # concatenate the 1 dimensional feature tensor from high road and middle road.
+        Highroad_Middleroad_input = torch.cat([y_Highroad_output, y_Middleroad_output], dim=1)
 
-        # last fully connected network to compute the high dimensional features based on the low road and high road
+        # last fully connected network to compute the high dimensional features based on the middle road and high road
         # features.
-        y_Highroad_Lowroad_FC = self.VCA_FC(Highroad_Lowroad_input)
+        y_Highroad_Middleroad_FC = self.VCA_FC(Highroad_Middleroad_input)
 
-        return y_Highroad_Lowroad_FC
-
-
-class VGG_Freeze_conv_FC2_attention(nn.Module):
-    """
-    VGG-16 based network. The weights except for the last layer is frozen.
-    In addition, the output label is replaced as single node output.
-    The single output predicts the valence of the natural input.
-
-    """
-
-    def __init__(self):
-        super(VGG_Freeze_conv_FC2_attention, self).__init__()
-        """
-        Args:
-        """
-        vgg = vgg16_ori()
-
-        for param in vgg.features.parameters():
-            param.requires_grad = False
-
-        for param in vgg.classifier.parameters():
-            param.requires_grad = True
-
-        # Newly created modules have require_grad=True by default
-
-        self.features = vgg.features
-        self.ECA_Module = eca_layer()
-        self.classifier = vgg.classifier[:-1]
-
-        self.fully_connected_layers = nn.Sequential(nn.Linear(4096, 1024),
-                                                    nn.ReLU(True),
-                                                    nn.Dropout(),
-                                                    nn.Linear(1024, 1024),
-                                                    nn.ReLU(True),
-                                                    nn.Dropout(),
-                                                    nn.Linear(1024, 1),
-                                                    nn.Sigmoid())
+        return y_Highroad_Middleroad_FC
 
 
-    def forward(self, x):
-        input_image = x
-        y_features = self.features(input_image)
-        y_attention = self.ECA_Module(y_features)
-        y_attention = torch.flatten(y_attention, start_dim=1)
-        y_classifier = self.classifier(y_attention)
-        y = self.fully_connected_layers(y_classifier)
-        return y
-
-
-class VGG_Freeze_conv_attention(nn.Module):
-    """
-    VGG-16 based network. The weights except for the last layer is frozen.
-    In addition, the output label is replaced as single node output.
-    The single output predicts the valence of the natural input.
-
-    """
-
-    def __init__(self):
-        super(VGG_Freeze_conv_attention, self).__init__()
-        """
-        Args:
-        """
-        vgg = vgg16_ori()
-
-        for param in vgg.features.parameters():
-            param.requires_grad = False
-
-        for param in vgg.classifier.parameters():
-            param.requires_grad = True
-
-        # Newly created modules have require_grad=True by default
-
-        self.features = vgg.features
-        self.ECA_Module = eca_layer()
-        self.classifier = vgg.classifier
-
-        num_ftrs = self.classifier[6].in_features
-        self.classifier[6] = nn.Sequential(nn.Linear(num_ftrs, 1),
-                                               nn.Sigmoid())
-
-
-    def forward(self, x):
-        input_image = x
-        y_features = self.features(input_image)
-        y_attention = self.ECA_Module(y_features)
-        y_attention = torch.flatten(y_attention, start_dim=1)
-        y = self.classifier(y_attention)
-        return y
