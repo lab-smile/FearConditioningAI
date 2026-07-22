@@ -1,4 +1,17 @@
 from __future__ import print_function, division
+
+r"""Concatenate repeated Gabor-patch conditioning-test runs into learning-curve CSVs.
+
+Expects `result_dir` to contain several "model_test*" subdirectories (one per repeated
+run of test_gaborpatch_iteration.py, e.g. 10 repeats of the same experiment), each
+holding CSVs named with the `--result_file_header` prefix. For the two Gabor patches
+named in `--test_gabor` (by convention: one unpleasant-associated, one pleasant-
+associated), this pulls each run's predicted valence per model/epoch into its own
+column, producing two "Learning_Curve_<gabor>.csv" files -- one row per model/epoch,
+one column per repeated run -- suitable for plotting a learning curve with variance
+across repeats.
+"""
+
 import glob
 import torch
 import matplotlib
@@ -22,15 +35,6 @@ parser.add_argument('--result_file_header', default='Conditioning_Experiment_gab
 parser.add_argument('--result_columns', default=['model', 'gabor', 'valence'], help='the name of the result folder header you want to concatenate')
 parser.add_argument('-l', '--test_gabor', action='store', dest='test_gabor', type=str, nargs='*',
                     default=['gabor-gaussian-90-freq20-cont20', 'gabor-gaussian-90-freq20-cont80'], help="Examples: -i item1 item2, -i item3")
-
-'''
-This code is for extracting n different gabor patches to make csv file for learning curve. The result_dir should have 
-the directory name starting with 'model_test'. Then it concatenates all the gabor data in the model_test files. 
-The output file is the concatenation of 10 iterations for same experiments. 
-
-The file which gives the input to this function: test_gaborpatch_iteration.py
-
-'''
 
 if __name__ == '__main__':
 

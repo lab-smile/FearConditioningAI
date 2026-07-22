@@ -79,8 +79,10 @@ for gabor_csv in gabor_csvs:
     gabor_df = pd.read_csv(os.path.join(args.result_dir, gabor_csv))
     gabor_sub_df = gabor_df[gabor_df['layer_idx'] == args.layer_idx]
     gabor_sub_df = gabor_sub_df.dropna(axis='columns')
-    gabor_sub_df = gabor_sub_df[~gabor_sub_df['image_name'].str.contains('cont0')]
+    gabor_sub_df = gabor_sub_df[~gabor_sub_df['image_name'].str.contains('cont0')]  # drop zero-contrast (blank) patches
     gabor_sub_df['image_name'] = gabor_sub_df['image_name'].str.replace('.png', '')
+    # Gabor filenames encode their parameters, e.g. "gabor-gaussian-45-freq20-cont50";
+    # split on '-' to recover envelope/orientation/frequency/contrast as their own columns.
     gabor_sub_df[['gabor', 'envelope', 'orientation', 'frequency', 'contrast']] = gabor_sub_df['image_name'].apply(
         lambda x: pd.Series(str(x).split("-")))
     gabor_sub_df['frequency'] = gabor_sub_df['frequency'].str.replace('freq', '')
@@ -100,7 +102,7 @@ for gabor_csv in gabor_csvs:
 
     # Image Dataframe Processing
 
-    X_gabor = X_gabor.append(gabor_sub_df, ignore_index=True)
+    X_gabor = pd.concat([X_gabor, gabor_sub_df], ignore_index=True)
 
 X_image = pd.DataFrame()
 
@@ -120,7 +122,7 @@ for image_csv in image_csvs:
         epoch = int(epoch.replace('epoch', ''))
     image_sub_df['epoch'] = epoch
 
-    X_image = X_image.append(image_sub_df, ignore_index=True)
+    X_image = pd.concat([X_image, image_sub_df], ignore_index=True)
 
 
 # gabor patch dataset
@@ -144,7 +146,7 @@ gabor_n = np.shape(X_gabor)[0]
 image_n = np.shape(X_image)[0]
 
 # Whole dataset
-X = X_gabor.append(X_image, ignore_index=True)
+X = pd.concat([X_gabor, X_image], ignore_index=True)
 
 tsne = TSNE(n_components=args.n_components, perplexity=10.0, verbose=1, n_iter=1000, random_state=0)
 transformed_X = tsne.fit_transform(X)

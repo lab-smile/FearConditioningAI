@@ -1,4 +1,27 @@
-# partial code is refered from https://stackoverflow.com/questions/51511074/how-to-create-sub-network-reference-in-pytorch3.
+r"""Model definitions for the Visual Cortex Amygdala (VCA) associative-learning architecture.
+
+This is the main model file used by the training scripts (train_regression.py,
+train_finetuning.py, train_conditioning2.py). It defines:
+
+    - VGG / make_layers / _vgg / _vgg16 / _vgg16_bn / vgg16_ori / vgg16_bn_ori:
+        A local copy of the standard torchvision VGG-16 implementation, used to build
+        the frozen, ImageNet-pretrained "ventral visual pathway" backbone.
+    - VGG_Unfreeze_All / VGG_Freeze_conv / VGG_BN_Freeze_conv / VGG_Freeze_conv_FC1 /
+      VGG_Freeze_conv_FC2:
+        Single-pathway baselines that repurpose VGG-16's classifier head to output a
+        single sigmoid valence score, with varying amounts of the network unfrozen.
+    - Visual_Cortex_Amygdala / Visual_Cortex_Amygdala_wo_Attention:
+        The full two-pathway model: a "highroad" (the standard VGG-16 ventral stream)
+        and a "middleroad" shortcut pathway with a bottom-up ECA attention module,
+        modeling the amygdala's modulation of visual processing during conditioning.
+        These are the models referenced as `model_to_run == 6` / `7` in the training
+        scripts, and are the primary architecture analyzed in the paper.
+
+Note: `.network` also defines its own `vgg16_ori`, but the import below is shadowed by
+this module's own `vgg16_ori` definition further down; only the local definition is used.
+
+partial code is refered from https://stackoverflow.com/questions/51511074/how-to-create-sub-network-reference-in-pytorch3.
+"""
 
 
 from __future__ import print_function, division
@@ -165,6 +188,24 @@ def vgg16_bn_ori(is_freeze=True):
 
     return model
 
+class VGG_Unfreeze_All(nn.Module):
+    r"""VGG 16-layer model (configuration "D") with only feature extractor frozen.
+        Args:
+            is_freeze (bool): If True, the model parameters in feature extractor modules are frozen.
+        """
+
+    def __init__(self):
+        super(VGG_Unfreeze_All, self).__init__()
+        self.vgg = vgg16_ori()
+
+        # Newly created modules have require_grad=True by default
+        num_ftrs = self.vgg.classifier[6].in_features
+        self.vgg.classifier[6] = nn.Sequential(nn.Linear(num_ftrs, 1),
+                                               nn.Sigmoid())
+
+    def forward(self, x):
+        return self.vgg(x)
+
 
 class VGG_Freeze_conv(nn.Module):
     r"""VGG 16-layer model (configuration "D") with only feature extractor frozen.
@@ -176,7 +217,7 @@ class VGG_Freeze_conv(nn.Module):
         super(VGG_Freeze_conv, self).__init__()
         self.vgg = vgg16_ori()
 
-        for param in self.vgg.parameters():
+        for param in self.vgg.classifier.parameters():
             param.requires_grad = False
 
         # Newly created modules have require_grad=True by default

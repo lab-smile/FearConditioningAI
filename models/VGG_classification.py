@@ -1,7 +1,14 @@
+r"""Earlier/experimental amygdala-inspired models, kept for classification-style outputs.
 
+    - Amy_IntermediateRoad: a low-road/high-road model similar in spirit to
+      Visual_Cortex_Amygdala (models/VGG_Model.py), but with a spatial-pyramid-pooling
+      style low road (LA, "Lateral nucleus") feeding into a multi-class fully connected
+      head (CE, "Central nucleus") instead of a single valence score.
+    - VGG_classification: plain VGG-16 with its last classifier layer replaced by a
+      `num_classes`-way linear layer, for standard multi-class image classification.
 
-
-# partial code is refered from https://stackoverflow.com/questions/51511074/how-to-create-sub-network-reference-in-pytorch3.
+partial code is refered from https://stackoverflow.com/questions/51511074/how-to-create-sub-network-reference-in-pytorch3.
+"""
 
 
 from __future__ import print_function, division
@@ -141,15 +148,25 @@ def vgg16_bn_ori(is_freeze = True):
 
 
 class Amy_IntermediateRoad(nn.Module):
+    """Amygdala-inspired model with a low road (LA) and a fully-connected high road (CE).
+
+    LA ("Lateral nucleus") pools early VGG-16 features at multiple spatial scales
+    (spatial-pyramid-pooling-style max/avg pools) and passes the concatenated features
+    through channel attention (ECA) before a small FC network. CE ("Central nucleus")
+    concatenates LA's output with the high-level VGG-16 features and predicts a
+    7-category output through further FC layers.
+
+    Args:
+        lowfea_VGGlayer (int): index into vgg.features where the low road branches off.
+        highfea_VGGlayer (int): controls how many of VGG-16's classifier layers are kept
+            for the high road (see vgg_highfea_part.classifier slicing below).
+        is_highroad_only (bool): if True, skip the low road entirely and feed CE a
+            zero tensor in its place.
+        is_gist (bool): if True, replace the low road's computed features with a
+            precomputed GIST feature vector supplied as part of the input.
+    """
     def __init__(self, lowfea_VGGlayer =4, highfea_VGGlayer = 36, is_highroad_only=False, is_gist=False):
         super(Amy_IntermediateRoad, self).__init__()
-        """
-        #this model is composed of two small networks:  Lateral nucleus (LA) and Central nucleus (CE)
-        #LA is composed of 3 small CNNs to integrate low-level features, middle-level features, and high-level features from VGG.
-        #CE is composed of several fully connected layers
-        Args:
-
-        """
         self.vgg = vgg16_ori()
 
         self.is_highroad_only = is_highroad_only
@@ -204,6 +221,7 @@ class Amy_IntermediateRoad(nn.Module):
 
 
     def LA_low_road_FC(self, size_input):
+        """Small FC head (with dropout) that projects the pooled low-road features down to 512-d."""
         amygdala_low = nn.Sequential(
             nn.Linear(size_input, 1024), nn.ReLU(inplace=True),nn.Dropout(p=0.5),
             nn.Linear(1024,512), nn.ReLU(inplace=True), nn.Dropout(p=0.5),
@@ -211,6 +229,7 @@ class Amy_IntermediateRoad(nn.Module):
         return amygdala_low
 
     def CE(self, input_size_CE):
+        """FC head that combines low-road + high-road features into a 7-way category output."""
         amygdala_CE = nn.Sequential(
             nn.Linear(input_size_CE, 1024), nn.ReLU(inplace=True),nn.Dropout(p=0.5),
             nn.Linear(1024, 1024), nn.ReLU(inplace=True),nn.Dropout(p=0.5),
@@ -289,14 +308,10 @@ class Amy_IntermediateRoad(nn.Module):
 
 
 class VGG_classification(nn.Module):
-    "VGG classification net"
+    """Standard VGG-16 with its final classifier layer replaced by a `num_classes`-way linear layer."""
 
     def __init__(self, num_classes):
         super(VGG_classification, self).__init__()
-        """
-        Args:
-
-        """
         self.vgg = vgg16_ori()
         # Newly created modules have require_grad=True by default
         num_ftrs = self.vgg.classifier[6].in_features

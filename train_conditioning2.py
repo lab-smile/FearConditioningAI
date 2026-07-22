@@ -21,7 +21,7 @@ from torch.optim import lr_scheduler
 # project based libraries
 from utils import save_checkpoint, cond_eval_model
 from dataloader import cond_dataloader
-from models.VGG_Model import VGG, VGG_Freeze_conv, VGG_BN_Freeze_conv, VGG_Freeze_conv_FC1, VGG_Freeze_conv_FC2, \
+from models.VGG_Model import VGG_Unfreeze_All, VGG_Freeze_conv, VGG_BN_Freeze_conv, VGG_Freeze_conv_FC1, VGG_Freeze_conv_FC2, \
     Visual_Cortex_Amygdala, Visual_Cortex_Amygdala_wo_Attention
 
 # cuda libraries
@@ -76,8 +76,8 @@ parser.add_argument('--TRAIN2', default='IAPS_Conditioning_Pleasant2', type=str,
                     help='the folder of pleasant data')
 
 # These validation and test data does not matter much in the associative learning process.
-parser.add_argument('--VAL', default='IAPS_120_no60_val', type=str, help='the folder of validation data')
-parser.add_argument('--TEST', default='IAPS_120_no60_test', type=str, help='the folder of test data')
+parser.add_argument('--VAL', default='IAPS_10-10-80_val3', type=str, help='the folder of validation data')
+parser.add_argument('--TEST', default='IAPS_10-10-80_test3', type=str, help='the folder of test data')
 
 parser.add_argument('--csv_train', default='./data/IAPS_Conditioning_Unpleasant2.csv', type=str,
                     help='the path of unpleasant data csv file')
@@ -85,9 +85,9 @@ parser.add_argument('--csv_train2', default='./data/IAPS_Conditioning_Pleasant2.
                     help='the path of pleasant data csv file')
 
 # These validation and test data does not matter much in the associative learning process.
-parser.add_argument('--csv_val', default='./data/IAPS_120_no60_val.csv', type=str,
+parser.add_argument('--csv_val', default='./data/IAPS_10-10-80_val3.csv', type=str,
                     help='the path of validation data csv file')
-parser.add_argument('--csv_test', default='./data/IAPS_120_no60_test.csv', type=str,
+parser.add_argument('--csv_test', default='./data/IAPS_10-10-80_test3.csv', type=str,
                     help='the path of test data csv file')
 
 parser.add_argument('--batch_size', default=10, type=int, help='batch size')
@@ -111,19 +111,20 @@ parser.add_argument('--start_epoch', default=0, type=int, metavar='N', help='man
 parser.add_argument('--is_fine_tune', default=True, type=lambda x: (str(x).lower() == 'true'),
                     help='whether to apply fine tuning to the model')
 
-parser.add_argument('--file_name', default='vca_IAPS_quadrant_batch16_lr1e-5_epoch91.pth',
-                    type=str, help='name of the trained model')
+parser.add_argument('--file_name', default='base_model_vca_IAPS_quadrant.pth',type=str, help='name of the trained model')
 
 parser.add_argument('--manipulation', default=0.0, type=int, help='Probability to block out the unconditional stimulus')
 
 parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
 
-parser.add_argument('--model_save_mode', type=int, default=1, help='1 : The code saves the model for every epoch '
+parser.add_argument('--model_save_mode', type=int, default=3, help='1 : The code saves the model for every epoch '
                                                                    '2 : The code saves the model when the loss decrease'
                                                                    '3 : The code saves the initial model and the final model')
 
 parser.add_argument('--random_seed', default=0, type=int,
                     help='This part is for controlling the random seed for reproductability')
+
+parser.add_argument('--shuffle_labels', default=False, type=lambda x: (str(x).lower() == 'false'))
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -131,6 +132,11 @@ torch.cuda.empty_cache()
 
 
 def free_gpu_cache():
+    """Log GPU memory usage, then clear PyTorch's CUDA cache and reset the CUDA context via numba."""
+    if not torch.cuda.is_available():
+        print("No CUDA device found, skipping GPU cache reset.")
+        return
+
     print("Initial GPU Usage")
     gpu_usage()
 
@@ -145,6 +151,14 @@ def free_gpu_cache():
 
 def train_model(dataloaders, dataset_sizes, TRAIN, VAL, model, criterion, optimizer, scheduler,
                 num_epochs, device, start_epoch=0):
+    """Run the train/val loop for `num_epochs`, saving checkpoints per --model_save_mode
+    (every epoch / only on val-loss improvement / just the first and last epoch), and
+    return the model with its best validation weights loaded.
+
+    If --shuffle_labels is set, training labels are replaced each epoch with random
+    values in [1, 9] -- a control condition to check the model isn't learning from
+    some spurious correlation unrelated to the actual valence labels.
+    """
     args = parser.parse_args()
     since = time.time()
 
@@ -172,6 +186,14 @@ def train_model(dataloaders, dataset_sizes, TRAIN, VAL, model, criterion, optimi
 
             # Iterate over data.
             for name, inputs, labels in dataloaders[phase]:
+
+                # --- CONTROL: shuffle labels for this phase ---
+                # --- CONTROL: replace labels with random values (1~9) ---
+                torch.manual_seed(args.random_seed + epoch)  # reproducible per-epoch
+                if args.shuffle_labels:
+                    labels = torch.rand(len(labels)) * (9 - 1) + 1  # Uniform(1,9)
+                # ---------------------------------------------------------
+                # ---------------------------------------------
 
                 # move the input and label tensors to the predefined device
                 inputs = inputs.to(device)
@@ -209,6 +231,7 @@ def train_model(dataloaders, dataset_sizes, TRAIN, VAL, model, criterion, optimi
 
             # calculation of the loss, Pearson Correlation Coefficient and R2
             epoch_loss = running_loss / dataset_sizes[phase]
+
             epoch_R, _ = pearsonr(labels_list, preds_list)
             epoch_R2 = np.around(epoch_R ** 2, 2)
 
@@ -268,6 +291,10 @@ def train_model(dataloaders, dataset_sizes, TRAIN, VAL, model, criterion, optimi
 
 
 def main():
+    """Load or build a model (resume / fine-tune from --file_name / fresh), run the
+    Pavlovian-conditioning training loop pairing --gabor_dir1/--gabor_dir2 Gabor
+    patches with unpleasant/pleasant US images, and evaluate before and after training.
+    """
     args = parser.parse_args()
 
     np.random.seed(args.random_seed)
@@ -289,7 +316,7 @@ def main():
         if os.path.isfile(os.path.join(args.model_dir, args.resume)):
             print("=> loading checkpoint '{}'".format(args.resume))
 
-            checkpoint = torch.load(os.path.join(args.model_dir, args.resume), map_location='cuda:0')
+            checkpoint = torch.load(os.path.join(args.model_dir, args.resume), map_location=device, weights_only=False)
             if "epoch" in checkpoint:
                 start_epoch = checkpoint['epoch']
             else:
@@ -305,14 +332,14 @@ def main():
     # if the mode is fine-tuning mode, the code will import the pretrained model, and load the model parameters
     elif args.is_fine_tune:
         print("=> loading old model '{}'".format(args.file_name))
-        old_model = torch.load(os.path.join(args.model_dir, args.file_name), map_location='cuda:0')
+        old_model = torch.load(os.path.join(args.model_dir, args.file_name), map_location=device, weights_only=False)
         start_epoch = args.start_epoch
         model = old_model['model']
         model.load_state_dict(old_model['state_dict'])
 
     else:
         if args.model_to_run == 1:
-            model = VGG()
+            model = VGG_Unfreeze_All()
         elif args.model_to_run == 2:
             model = VGG_Freeze_conv()
         elif args.model_to_run == 3:

@@ -1,0 +1,13 @@
+# OS / editor cruft
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Conda installer script
+Miniconda3-latest-*.sh
+
+# IAPS dataset (licensed research data - do not commit)
+data/IAPS*
+

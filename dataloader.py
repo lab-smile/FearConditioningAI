@@ -1,3 +1,20 @@
+r"""PyTorch Dataset/DataLoader construction for the VCA training pipeline.
+
+Provides the image transforms and DataLoader factory functions used by the training
+scripts (train_regression.py, train_finetuning.py, train_conditioning2.py):
+
+    - reg_dataloader: full-image regression training (natural IAPS images).
+    - quadrant_finetune_dataloader: regression training where the US image is confined
+      to one quadrant of the frame (train_finetuning.py's fine-tuning stage).
+    - cond_dataloader: Pavlovian conditioning training, where one Gabor CS+ patch fills
+      the remaining quadrants around each US image (train_conditioning2.py). Supports
+      two simultaneous training folders (e.g. unpleasant-paired vs. pleasant-paired US
+      images), concatenated into a single training set.
+
+Class balance during training is handled via ImbalancedDatasetSampler (torchsampler),
+weighting each sample by the inverse frequency of its (rounded) valence label.
+"""
+
 from __future__ import print_function, division
 # base libraries
 import os
@@ -22,14 +39,16 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 def seed_worker(worker_id):
+    """DataLoader `worker_init_fn`: reseed numpy/random per-worker from torch's per-worker seed,
+    so augmentation randomness is reproducible across runs with multiple num_workers."""
     worker_seed = torch.initial_seed() % 2 ** 32
     np.random.seed(worker_seed)
     random.seed(worker_seed)
 
 
-# This part of code is not used currently
-
+# Not used currently; kept for potential min-max rescaling of raw feature arrays.
 def NormalizeData(data):
+    """Min-max scale an array to [0, 1]."""
     return (data - np.min(data)) / (np.max(data) - np.min(data))
 
 
@@ -217,6 +236,7 @@ def data_transform_quadrant_finetune(train_folder, val_folder, test_folder, is_g
 
 
 def data_csv(train_folder, val_folder, test_folder, csv_train, csv_val, csv_test):
+    """Map each split's folder name to its corresponding valence-label CSV path."""
     csv = {
         train_folder: csv_train,
         val_folder: csv_val,
@@ -226,6 +246,7 @@ def data_csv(train_folder, val_folder, test_folder, csv_train, csv_val, csv_test
 
 
 def data_csv2(train_folder1, train_folder2, val_folder, test_folder, csv_train1, csv_train2, csv_val, csv_test):
+    """Like data_csv, but for the two-training-folder (CS+/US pairing) conditioning setup."""
     csv = {
         train_folder1: csv_train1,
         train_folder2: csv_train2,
@@ -236,6 +257,7 @@ def data_csv2(train_folder1, train_folder2, val_folder, test_folder, csv_train1,
 
 
 def get_indices(dataset, class_name):
+    """Return the indices in `dataset` whose target label equals `class_name`."""
     indices = []
     for i in range(len(dataset.targets)):
         if dataset.targets[i] == class_name:
@@ -245,6 +267,10 @@ def get_indices(dataset, class_name):
 
 # Classification dataloader : the name of the folder is the class name
 def cls_dataloader_tuning(data_dir, test_folder, batch_size, category):
+    """Build a DataLoader over only the `category` subset of an ImageFolder-style test set.
+
+    Used for channel-tuning experiments that need to evaluate one class at a time.
+    """
     image_size = 224
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
@@ -265,6 +291,11 @@ def cls_dataloader_tuning(data_dir, test_folder, batch_size, category):
 
 
 def cls_dataloader(data_dir, train_folder, val_folder, test_folder, batch_size, istrain):
+    """Build ImageFolder-based DataLoaders for a standard (non-regression) classification task.
+
+    When istrain=True, returns train+val loaders (train balanced via ImbalancedDatasetSampler);
+    otherwise returns just the test loader.
+    """
     data_transforms = data_transform(train_folder, val_folder, test_folder)
 
     image_datasets = {
@@ -531,7 +562,10 @@ def quadrant_finetune_dataloader(data_dir, train_folder, val_folder, test_folder
 
 
 def image_patch_loader(transform, dir):
-    """load image, returns cuda tensor"""
+    """Load a single image file, apply `transform`, and return it as a batch-of-1 CPU tensor.
+
+    Callers (e.g. Channel_Activity_Extraction.py) move the result to the target device themselves.
+    """
 
     image = Image.open(dir)
     image = transform(image).float()
@@ -611,4 +645,5 @@ class RegressionDataset(Dataset):
 
 
 def reg_callback_get_label(dataset, idx):
+    """ImbalancedDatasetSampler callback: bucket a regression sample by its rounded valence label."""
     return round(dataset[idx][2])

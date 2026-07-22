@@ -16,22 +16,27 @@ from torchvision import transforms
 from dataloader import Quadrant_Processing, image_patch_loader
 
 
-r"""
-<Channel_Activity_Extraction>
+r"""Channel Activity Extraction (v2): dump per-image layer activations from a trained VCA model.
 
-This code is used to extract the activity of corresponding images from the model. In specific, this code is used to 
-extract the activation of fully connected layers in different pathways. 
+For every trained model in `model_dir` and every image in the chosen input set (either
+Gabor patches or IAPS images), this runs a forward pass and hooks the ReLU/Sigmoid layers
+of the selected module (--module_to_extract) to record their activations, together with
+the image's (true or model-predicted) valence. Each model's results are written to one
+CSV in `result_dir`, later consumed by Manifold_Visualization.py and by distance/SVM
+analyses of the learned feature representations.
 
-The output of this code is used to "Distance_Analysis", "Manifold Visualization".
-2 different analysis require following for each module. "image_to_extract", "data_dir", "image_dir", "gabor_dir" should
-be exclusively defined
+Difference from v1: v1 averaged each conv layer's spatial activations down to one value
+per channel; here the full activation tensor is flattened instead, retaining all spatial
+information (at the cost of much larger output CSVs).
 
-1. For Distance Analysis, use "gabor" for -image_to_extract- argument. No "image" required. 
-- for "gabor_dir", use directory with conditional stimulus.
+The two downstream analyses need different arguments:
 
-2. For Manifold Visualization, use "gabor" for -image_to_extract- argument. 
-- for "gabor_dir", use directory with gabor patches with different orientation. 
-- for "image_dir", use directory with unconditional stimulus. 
+1. Distance analysis: set --image_to_extract to "gabor"; --image_dir is unused.
+   --gabor_dir should point at the conditioned-stimulus (CS) Gabor patches.
+
+2. Manifold visualization: set --image_to_extract to "gabor" as well, but this time
+   --gabor_dir should point at Gabor patches spanning multiple orientations, and
+   --image_dir should point at the unconditioned-stimulus (US, IAPS) images.
 """
 
 plt.ion()
@@ -40,7 +45,7 @@ os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 parser = argparse.ArgumentParser(description='Parameters ')
-parser.add_argument('--image_to_extract', default='image', type=str, help='Choose either "image" or "gabor" as input.')
+parser.add_argument('--image_to_extract', default='gabor', type=str, help='Choose either "image" or "gabor" as input.')
 parser.add_argument('--result_dir', default='./result/model_test/Channel_Activity_Extraction')
 
 parser.add_argument('--data_dir', default='./data', type=str, help='where all the data are saved.')
@@ -48,12 +53,12 @@ parser.add_argument('--data_dir', default='./data', type=str, help='where all th
 parser.add_argument('--image_dir', default='IAPS_US', type=str,
                     help='where the unpleasant data are saved.')
 
-parser.add_argument('--gabor_dir', default='gabor_extract2', type=str,
-                    help='where the gabor patch you want to extract is saved.')
+parser.add_argument('--gabor_dir', default='gabor_patch_full_one', type=str,
+                    help='where the gabor patch you want to extract is saved. ex. gabor_patch_full_one, gabor_mcteague')
 
-parser.add_argument('--model_dir', default='./savedmodel', type=str, help='where the model is saved')
+parser.add_argument('--model_dir', default='./savedmodel/', type=str, help='where the model is saved')
 
-parser.add_argument('--module_to_extract', default='VCA_FC', type=str,
+parser.add_argument('--module_to_extract', default='VCA_Middleroad_Classifier', type=str,
                     help='There are 4 different modules to extract. '
                          '\nVCA_Features : This part is the feature extractor part from the VGG16 '
                          '\nVCA_Highroad_Classifier : This part is the classifier part from the VGG16'
@@ -116,7 +121,7 @@ for model_name in model_list:
     file_output = pd.DataFrame()
 
     # import the model and trained weights
-    trained_model = torch.load(os.path.join(args.model_dir, model_name), map_location='cuda:0')
+    trained_model = torch.load(os.path.join(args.model_dir, model_name), map_location=device, weights_only=False)
     model = trained_model['model']
     model.load_state_dict(trained_model['state_dict'])
 
@@ -158,6 +163,8 @@ for model_name in model_list:
         model = model.to(device)
         inputs = inputs.to(device)
 
+        # Builds a forward hook that stashes a layer's output (detached from the graph)
+        # into `activation[name]`, so it can be read back out after the forward pass.
         def get_activation(name):
             def hook(model, input, output):
                 activation[name] = output.detach()
@@ -182,15 +189,26 @@ for model_name in model_list:
                 print('The valence of the input:{}'.format(outputs[0][0]), flush=True)
 
                 if isinstance(module[n], nn.ReLU):
-                    vector = activation['ReLU' + str(n)].cpu().detach().numpy()
+                    vector = activation['ReLU' + str(n)]
+                    vector = vector.cpu().detach().numpy()
                 else:
                     pass
 
                 # different squeeze format for conv layers and fully connected layers
+
+
                 if vector.ndim == 4:
-                    vector = np.mean(np.squeeze(vector), axis=(1, 2))
+                    vector = np.squeeze(vector)
+                    shape = np.shape(vector)
+                    vector = vector.reshape(1, -1)
+                    # dataframe of activation values
+                    vector_df = pd.DataFrame(vector)
+
+
                 elif vector.ndim == 2:
                     vector = np.squeeze(vector)
+                    # dataframe of activation values
+                    vector_df = pd.DataFrame(vector).T
 
                 d = {}
                 d['image_name'] = [image]
@@ -201,9 +219,6 @@ for model_name in model_list:
                     d['valence'] = outputs[0]
                 elif args.image_to_extract == 'image':
                     d['valence'] = [valence_df[valence_df['image'] == image[:-4]]['valence'].iloc[0]]
-
-                # dataframe of activation values
-                vector_df = pd.DataFrame(vector).T
 
                 # make it as a one row dataframe
                 filter_output = pd.DataFrame(data=d)
@@ -256,8 +271,7 @@ for model_name in model_list:
                 file_output = pd.concat([file_output, filter_output], ignore_index=True)
 
     # save the result
-    file_output.to_csv(os.path.join(args.result_dir, model_name[:-4] + '_' + args.image_to_extract + '_'
-                                    + args.module_to_extract + '.csv'))
+    file_output.to_csv(os.path.join(args.result_dir, model_name[:-4] + '_' + args.image_to_extract + '_'+ args.module_to_extract + '.csv'))
 
 
 

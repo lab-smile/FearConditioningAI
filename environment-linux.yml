@@ -1,0 +1,31 @@
+name: fear-conditioning-ai
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - numpy
+  - pandas
+  - matplotlib
+  - seaborn
+  - pillow
+  - scikit-image
+  - scikit-learn
+  - scipy
+  - pytorch
+  - torchvision
+  - pytorch-cuda=12.1
+  - imageio
+  - numba
+  - tqdm
+  - pygal
+  - pip:
+      - altair
+      - altair-saver
+      - gputil
+# Linux with an NVIDIA GPU + driver supporting CUDA 12.1.
+#
+# For a CPU-only Linux machine, remove the `nvidia` channel and replace
+# `pytorch-cuda=12.1` below with `cpuonly`.

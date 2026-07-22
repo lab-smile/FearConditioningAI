@@ -1,4 +1,20 @@
-# partial code is refered from https://stackoverflow.com/questions/51511074/how-to-create-sub-network-reference-in-pytorch3.
+r"""Alternate VCA-style models with attention applied directly on VGG-16 features.
+
+Unlike models/VGG_Model.py's Visual_Cortex_Amygdala (which has a separate highroad/
+middleroad pathway), the models here apply the Efficient Channel Attention (ECA) module
+directly to the standard VGG-16 feature extractor's output (single pathway), then feed
+the attended features through the usual VGG-16 classifier and a small regression head:
+
+    - VGG_Freeze_conv_FC2_attention: attention applied to the full VGG-16 conv stack.
+    - VGG_Freeze_conv1_FC2_attention: attention applied to only the first conv block
+      (features[0:9]), loaded from a previously trained checkpoint on disk, to test
+      whether early low-level features are sufficient for valence decoding.
+
+This module duplicates the VGG/make_layers/vgg16_ori definitions from models/VGG_Model.py
+and models/network.py; only vgg16_ori (used to build the backbone) is actually needed here.
+
+partial code is refered from https://stackoverflow.com/questions/51511074/how-to-create-sub-network-reference-in-pytorch3.
+"""
 
 
 from __future__ import print_function, division
@@ -142,11 +158,12 @@ def vgg16_bn_ori(is_freeze=True):
 
 
 class VGG_Freeze_conv_FC2_attention(nn.Module):
-    """
-    VGG-16 based network. The weights except for the last layer is frozen.
-    In addition, the output label is replaced as single node output.
-    The single output predicts the valence of the natural input.
+    """VGG-16 with an ECA attention module inserted after the (frozen) feature extractor.
 
+    The convolutional feature extractor is frozen at ImageNet-pretrained weights; ECA
+    channel attention is applied to its output, then passed through VGG-16's original
+    classifier (minus its last layer) and a new 2-hidden-layer regression head ending
+    in a single sigmoid unit that predicts image valence.
     """
 
     def __init__(self):
@@ -188,19 +205,20 @@ class VGG_Freeze_conv_FC2_attention(nn.Module):
 
 
 class VGG_Freeze_conv1_FC2_attention(nn.Module):
-    """
-        VGG-16 based network. The weights except for the last layer is frozen.
-        In addition, the output label is replaced as single node output.
-        The single output predicts the valence of the natural input.
+    """Like VGG_Freeze_conv_FC2_attention, but restricted to only the first VGG-16 conv
+    block (features[0:9]) as the "visual cortex", to test whether valence can be decoded
+    from low-level features alone.
 
-        Thus, this model only has conv1 part of the VGG as a visual cortex.
-        """
+    The base model (feature extractor + classifier) is loaded from a checkpoint on disk
+    rather than freshly initialized from ImageNet weights.
+
+    Args:
+        path (str): directory containing the saved checkpoint.
+        model (str): checkpoint filename within `path`.
+    """
 
     def __init__(self, path, model):
         super(VGG_Freeze_conv1_FC2_attention, self).__init__()
-        """
-        Args:
-        """
         old_model = torch.load(os.path.join(path, model), map_location='cuda:0')
         base_model = old_model['model']
         base_model.load_state_dict(old_model['state_dict'])

@@ -21,7 +21,7 @@ from torch.optim import lr_scheduler
 # project based libraries
 from utils import reg_eval_model, save_checkpoint, load_checkpoint
 from dataloader import quadrant_finetune_dataloader
-from models.VGG_Model import VGG,VGG_Freeze_conv, VGG_BN_Freeze_conv, VGG_Freeze_conv_FC1, VGG_Freeze_conv_FC2, Visual_Cortex_Amygdala, Visual_Cortex_Amygdala_wo_Attention
+from models.VGG_Model import VGG_Unfreeze_All,VGG_Freeze_conv, VGG_BN_Freeze_conv, VGG_Freeze_conv_FC1, VGG_Freeze_conv_FC2, Visual_Cortex_Amygdala
 
 # cuda libraries
 from numba import cuda
@@ -58,15 +58,15 @@ r"""This code trains the regression model for finetuning the pretrained model fo
 # Params
 parser = argparse.ArgumentParser(description='Parameters ')
 parser.add_argument('--data_dir', default='./data', type=str, help='the data root folder')
-parser.add_argument('--TRAIN', default='IAPS_All_Balanced_train', type=str, help='the folder of training data')
-parser.add_argument('--VAL', default='IAPS_All_Balanced_val', type=str, help='the folder of validation data')
-parser.add_argument('--TEST', default='IAPS_All_Balanced_test', type=str, help='the folder of test data')
+parser.add_argument('--TRAIN', default='IAPS_10-10-80_train3', type=str, help='the folder of training data')
+parser.add_argument('--VAL', default='IAPS_10-10-80_val3', type=str, help='the folder of validation data')
+parser.add_argument('--TEST', default='IAPS_10-10-80_test3', type=str, help='the folder of test data')
 
-parser.add_argument('--csv_train', default='./data/IAPS_All_Balanced_train.csv', type=str,
+parser.add_argument('--csv_train', default='./data/IAPS_10-10-80_train3.csv', type=str,
                     help='the path of training data csv file')
-parser.add_argument('--csv_val', default='./data/IAPS_All_Balanced_val.csv', type=str,
+parser.add_argument('--csv_val', default='./data/IAPS_10-10-80_val3.csv', type=str,
                     help='the path of training data csv file')
-parser.add_argument('--csv_test', default='./data/IAPS_All_Balanced_test.csv', type=str,
+parser.add_argument('--csv_test', default='./data/IAPS_10-10-80_test3.csv', type=str,
                     help='the path of training data csv file')
 
 parser.add_argument('--batch_size', default=16, type=int, help='batch size')
@@ -89,11 +89,11 @@ parser.add_argument('--is_fine_tune', default=True, type=lambda x: (str(x).lower
                     help='whether to apply fine tuning to the model')
 
 parser.add_argument('--file_name',
-                    default='vca_IAPS_batch10_lr2e-4_epoch48.pth',
+                    default='vca_IAPS_batch10_lr2e-4_epoch23.pth',
                     type=str, help='name of the trained model')
 
 parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
-parser.add_argument('--random_seed', default=1, type=int,
+parser.add_argument('--random_seed', default=2, type=int,
                     help='This part is for controlling the random seed for reproductability')
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -104,6 +104,7 @@ torch.cuda.empty_cache()
 
 # This part is needed just in case to remove all the cached data in the GPU
 def free_gpu_cache():
+    """Log GPU memory usage, then clear PyTorch's CUDA cache and reset the CUDA context via numba."""
     print("Initial GPU Usage")
     gpu_usage()
 
@@ -119,6 +120,9 @@ def free_gpu_cache():
 
 def train_model(dataloaders, dataset_sizes, TRAIN, VAL, model, criterion, optimizer, scheduler,
                 num_epochs, device, start_epoch=0):
+    """Run the train/val loop for `num_epochs`, checkpointing whenever validation loss
+    improves, and return the model with its best validation weights loaded.
+    """
     args = parser.parse_args()
     since = time.time()
 
@@ -200,9 +204,13 @@ def train_model(dataloaders, dataset_sizes, TRAIN, VAL, model, criterion, optimi
                 best_epoch = epoch + 1
                 best_model_wts = copy.deepcopy(model.state_dict())
 
-                save_checkpoint(best_R, best_loss, best_epoch, model,  best_model_wts,
-                                optimizer, os.path.join(args.model_dir, args.model_name[:-4]+'_epoch' +str(best_epoch)
-                                                      +'.pth'))
+                #save_checkpoint(best_R, best_loss, best_epoch, model,  best_model_wts,
+                #                optimizer, os.path.join(args.model_dir, args.model_name[:-4]+'_epoch' +str(best_epoch)
+                #                                      +'.pth'))
+
+                save_checkpoint(best_R, best_loss, best_epoch, model, best_model_wts,
+                                optimizer, os.path.join(args.model_dir, args.model_name[:-4]
+                                                        +'.pth'))
 
                 print('Best epoch: {:} Best loss: {:.4f} Best R: {:.4f} '.format(
                     best_epoch, best_loss, best_R))
@@ -222,6 +230,10 @@ def train_model(dataloaders, dataset_sizes, TRAIN, VAL, model, criterion, optimi
 
 
 def main():
+    """Load or build a model (resume / fine-tune from --file_name / fresh), fine-tune it
+    on the quadrant-cropped US-image dataset (US confined to one quadrant, matching the
+    input layout later used during conditioning), and evaluate before and after training.
+    """
     free_gpu_cache()
     args = parser.parse_args()
 
@@ -270,7 +282,7 @@ def main():
     # VGG_Model.py, and use that model as a framework.
     else:
         if args.model_to_run == 1:
-            model = VGG()
+            model = VGG_Unfreeze_All()
         elif args.model_to_run == 2:
             model = VGG_Freeze_conv()
         elif args.model_to_run == 3:

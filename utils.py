@@ -1,3 +1,27 @@
+r"""Shared utilities for the Visual Cortex Amygdala (VCA) associative-learning pipeline.
+
+This module is a grab-bag of helpers used across the training/evaluation scripts
+(train_regression.py, train_finetuning.py, train_conditioning2.py) and the offline
+analysis notebooks/scripts. Roughly, it is organized into:
+
+    1. Plotting helpers for classification results (confusion matrix, ROC/PR curves).
+    2. Evaluation loops:
+         - cls_eval_model / cls_process_output / cls_visualize_model  -> classification models
+         - reg_eval_model / reg_visualize_model                       -> regression (valence) models
+         - cond_eval_model / cond_eval_model2                          -> post-conditioning regression models
+    3. Checkpoint I/O: save_checkpoint / load_checkpoint.
+    4. Channel-selectivity / tuning-curve analysis helpers (find_selective_kernels*,
+       kernel_selectivity, get_overlap_kernels, ...), used by offline experiments that
+       probe which VGG kernels are selective for a given emotional category.
+    5. Custom torchvision-style transforms: GaussianBlur and the Quadrant_Processing
+       family, which place the CS (Gabor patch) and US (IAPS image) into different
+       quadrants of the input image for the conditioning paradigm.
+
+Most of the analysis helpers in section 4 are only used by ad-hoc analysis scripts and
+are kept here for reproducibility; the training/evaluation entry points only depend on
+sections 2, 3 and 5.
+"""
+
 import imageio
 import matplotlib
 
@@ -32,6 +56,7 @@ import json
 
 
 def imshow(inp, marker, title=None):
+    """Display a CHW tensor as an image and save it under result/visual_result_*.pdf."""
     inp = inp.numpy().transpose((1, 2, 0))
     # plt.figure(figsize=(10, 10))
     fig = plt.figure(figsize=(10, 10))
@@ -47,11 +72,13 @@ def imshow(inp, marker, title=None):
 
 
 def show_databatch(class_names, inputs, classes, marker):
+    """Tile a batch of images into a grid, titled with their class names."""
     out = torchvision.utils.make_grid(inputs)
     imshow(out, marker, title=[class_names[x] for x in classes])
 
 
 def show_databatch_regression(inputs, classes, marker):
+    """Tile a batch of images into a grid, titled with their (rounded) valence labels."""
     out = torchvision.utils.make_grid(inputs)
     imshow(out, marker, title=[round(x, 2) for x in classes.numpy()])
 
@@ -146,6 +173,7 @@ def plot_confusion_matrix(cm, target_names, title='Confusion matrix', cmap=None,
 
 
 def plot_precision_recall(n_classes, Y_test, y_score):
+    """Plot per-class and micro-averaged precision-recall curves for a multi-class classifier."""
     ###############################################################################
     # The average precision score in multi-label settings
 
@@ -227,6 +255,7 @@ def plot_precision_recall(n_classes, Y_test, y_score):
 
 
 def filter_array(np_labels, np_preds, n_classes):
+    """Split labels/predictions per class and one-hot binarize each subset (for per-class PR curves)."""
     results_labels = {}
     results_preds = {}
 
@@ -239,6 +268,11 @@ def filter_array(np_labels, np_preds, n_classes):
 
 
 def plot_correaltion(y, y_cv, score_cv_r, score_cv_r2, mse_cv, test_folder):
+    """Scatter measured vs. predicted valence ratings with a best-fit line, and save the figure.
+
+    Used by reg_eval_model/cond_eval_model to visualize how well the network's decoded
+    valence tracks the ground-truth valence for `test_folder`.
+    """
     # Fit a line to the C vs response
 
     z = np.polyfit(y, y_cv, 1)
@@ -266,6 +300,7 @@ def plot_correaltion(y, y_cv, score_cv_r, score_cv_r2, mse_cv, test_folder):
 
 def plot_tuning_accuracy(strenths, accuracy, category, tuning_category, test_folder,
                          tuning_layer, result_folder, plot_extra_title=None):
+    """Line plot of model accuracy vs. tuning strength for one layer/category (channel-tuning experiments)."""
     sns.set()
     fig, ax = plt.subplots(figsize=(8, 8))
     ax.plot(strenths, accuracy, color='black', linewidth=1, marker='o', markerfacecolor='black', markersize=3)
@@ -294,6 +329,7 @@ def plot_tuning_accuracy(strenths, accuracy, category, tuning_category, test_fol
 
 # plot one layer each time
 def plot_tuning_accuracy_changes(performance_changes, class_names, tuning_category, test_folder, plot_extra_title=None):
+    """Line plot of performance change vs. tuning layer, one figure per class in `class_names`."""
     lists = sorted(performance_changes.items())  # sorted by key, return a list of tuples
     layers, per_changes = zip(*lists)  # unpack a list of pairs into two tuples
 
@@ -331,6 +367,7 @@ def plot_tuning_accuracy_changes(performance_changes, class_names, tuning_catego
 # plot all layers
 def plot_tuning_performance_changes_pygal(performance_changes, class_names, tuning_category, test_folder, result_folder,
                                           plot_extra_title=None):
+    """Bar chart (via pygal) of performance change across all tuning layers, grouped by class."""
     import pygal
     from pygal.style import Style
 
@@ -379,6 +416,7 @@ def plot_tuning_performance_changes_pygal(performance_changes, class_names, tuni
 
 def plot_tuning_performance_changes_altair(data_to_plot, tuning_category, test_folder, result_folder,
                                            plot_extra_title=None):
+    """Bar chart (via Altair) of performance change across tuning layers, faceted by response category."""
     alt.renderers.enable('altair_viewer')
 
     df = pd.DataFrame({'layer': data_to_plot['layerName'],
@@ -435,6 +473,7 @@ def plot_tuning_performance_changes_altair(data_to_plot, tuning_category, test_f
 
 def plot_tuning_performance_changes_sns(data_to_plot, tuning_category, test_folder,
                                         result_folder, is_lesoin=False, plot_extra_title=None):
+    """Bar chart (via seaborn) of performance change across tuning/lesion layers, grouped by response category."""
     sns.set(style="ticks", color_codes=True)
     sns.set(font='Calibri')
     sns.set(font_scale=1.5)
@@ -482,6 +521,7 @@ def plot_tuning_performance_changes_sns(data_to_plot, tuning_category, test_fold
 
 
 def convert_layerID_to_convName(layer):
+    """Map a VGG-16 sequential-module index to its conventional "convN" name (e.g. 1 -> conv1)."""
     switcher = {
         1: "conv1",
         3: "conv2",
@@ -506,6 +546,7 @@ def convert_layerID_to_convName(layer):
 
 
 def assign_color(category):
+    """Return a fixed hex color for a given emotion/response category, for consistent plot legends."""
     if 'unpleasant' == category:
         color = '#ffff14'
     elif 'pleasant' == category:
@@ -522,6 +563,7 @@ def assign_color(category):
 
 
 def plot_selectivity_channel_overlabp_altair(data_to_plot, result_folder, overlap_with, plot_extra_title=None):
+    """Bar chart (via Altair) of how much a layer's selective channels overlap with `overlap_with`, by category."""
     alt.renderers.enable('altair_viewer')
 
     df = pd.DataFrame({'layer': data_to_plot['layer'],
@@ -577,6 +619,7 @@ def plot_selectivity_channel_overlabp_altair(data_to_plot, result_folder, overla
 
 
 def plot_num_channel_within_layers(data_to_plot, result_folder, plot_extra_title=None):
+    """Bar chart of the number of category-selective channels per layer."""
     sns.set(style="ticks", color_codes=True)
     sns_plot = sns.catplot(x="layer", y="num_channels", hue="category", kind="bar", data=data_to_plot)
 
@@ -590,6 +633,7 @@ def plot_num_channel_within_layers(data_to_plot, result_folder, plot_extra_title
 
 # for classification
 def cls_visualize_model(dataloaders, class_names, vgg, test_folder, num_images, device):
+    """Run a classifier on `test_folder` and display ground-truth vs. predicted labels for `num_images` samples."""
     was_training = vgg.training
 
     # Set model for evaluation
@@ -627,6 +671,7 @@ def cls_visualize_model(dataloaders, class_names, vgg, test_folder, num_images, 
 
 def cls_process_output(criterion, outputs, labels, loss_test, acc_test, labels_list, preds_list, i, preds_proba_list,
                        positive_class_idx=1, istuning=False, strenth=None):
+    """Score one classification batch (loss/accuracy) and accumulate labels/predictions/probabilities for later reporting."""
     probabilities = torch.nn.functional.softmax(outputs, dim=1)
     _, preds = torch.max(outputs.data, 1)
 
@@ -648,6 +693,7 @@ def cls_process_output(criterion, outputs, labels, loss_test, acc_test, labels_l
 
 
 def print_result(loss_test, acc_test, data_size, class_names, labels_list, preds_list, preds_proba_list):
+    """Print/plot a classifier's confusion matrix, classification report, and ROC curve for one evaluation pass."""
     # calculate accuracy
     avg_loss = loss_test / data_size
     avg_acc = acc_test.double() / data_size
@@ -692,6 +738,14 @@ def cls_eval_model(dataloaders, dataset_sizes, class_names, test_folder, vgg, cr
                    allcategory_idx=None, tuning_category=None,
                    plot_extra_title=None, tuning_layer=None, result_folder=None, model_metric='AUC',
                    is_record_tuning_detail=True):
+    """Evaluate a classification model on `test_folder`.
+
+    In the default mode (istunning=False) this just reports loss/accuracy/ROC-AUC over the
+    whole test set. When istunning=True, the model is instead evaluated once per entry in
+    `tuningstrenths` (each strength scales/lesions `tuning_layer`'s activations inside the
+    model's forward pass) so the resulting accuracy/AUC/F1 curve shows how performance on
+    each category changes as that layer is tuned or lesioned.
+    """
     since = time.time()
     loss_test = 0
     acc_test = 0
@@ -830,6 +884,7 @@ def cls_eval_model(dataloaders, dataset_sizes, class_names, test_folder, vgg, cr
 
 # for regression
 def reg_visualize_model(dataloaders, vgg, test_folder, num_images, device):
+    """Run a regression (valence) model on `test_folder` and display ground-truth vs. predicted valence."""
     was_training = vgg.training
 
     # Set model for evaluation
@@ -874,6 +929,16 @@ def reg_visualize_model(dataloaders, vgg, test_folder, num_images, device):
 
 # for regression
 def reg_eval_model(dataloaders, dataset_sizes, test_folder, vgg, criterion, device):
+    """Evaluate a valence-regression model on `test_folder` and report loss/correlation.
+
+    Runs the model over every batch in dataloaders[test_folder], rescales the sigmoid
+    output from [0, 1] to the [1, 9] valence scale, and computes the MSE loss and the
+    Pearson correlation (R/R2) between predicted and ground-truth valence. Also produces
+    a measured-vs-predicted scatter plot via plot_correaltion.
+
+    Returns:
+        The Pearson correlation coefficient (R) between labels and predictions.
+    """
     since = time.time()
     loss_test = 0
     labels_list = []
@@ -940,6 +1005,15 @@ def reg_eval_model(dataloaders, dataset_sizes, test_folder, vgg, criterion, devi
 
 
 def cond_eval_model(dataloaders, dataset_sizes, test_folder, vgg, criterion, device, is_gist=False, is_saliency=False):
+    """Evaluate a (post-)conditioning valence-regression model on `test_folder`.
+
+    Identical to reg_eval_model, except the input batch can be a single tensor or a
+    list of tensors [image, gist, saliency] depending on is_gist/is_saliency, so each
+    input stream is moved to `device` individually before the forward pass.
+
+    Returns:
+        The Pearson correlation coefficient (R) between labels and predictions.
+    """
     since = time.time()
     loss_test = 0
     labels_list = []
@@ -1015,6 +1089,11 @@ def cond_eval_model(dataloaders, dataset_sizes, test_folder, vgg, criterion, dev
     return score_c_r
 
 def cond_eval_model2(dataloaders, dataset_sizes, test_folder, vgg, criterion, device, is_gist=False, is_saliency=False):
+    """Variant of cond_eval_model that rescales the sigmoid output to a [0, 90] range instead of [1, 9].
+
+    Used for label schemes with a wider valence/intensity scale than the standard 1-9
+    IAPS rating; otherwise identical to cond_eval_model.
+    """
     since = time.time()
     loss_test = 0
     labels_list = []
@@ -1091,6 +1170,7 @@ def cond_eval_model2(dataloaders, dataset_sizes, test_folder, vgg, criterion, de
 
 
 def save_checkpoint(best_R, best_loss, best_epoch, model, best_state_dict, optimizer, model_name):
+    """Save a training checkpoint (model, weights, optimizer state, and best-so-far metrics) to `model_name`."""
     checkpoint = {'model': model,
                   'epoch': best_epoch,
                   'best_per': best_R,
@@ -1103,7 +1183,15 @@ def save_checkpoint(best_R, best_loss, best_epoch, model, best_state_dict, optim
 
 # for test
 def load_checkpoint(model, filepath, tuning_layer=None, istuning=False):
-    checkpoint = torch.load(filepath, map_location='cuda:0')
+    """Load a saved checkpoint's weights into `model`, freeze all parameters, and set eval mode.
+
+    If istuning=True, only weights up to `tuning_layer` are loaded under their original
+    keys; weights belonging to layers after the tuning point are renamed (features ->
+    rest_conv_part_net / classifier -> rest_fc_part_net) so a model built with separate
+    "tunable" and "rest" submodules for that layer can still load the original checkpoint.
+    """
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    checkpoint = torch.load(filepath, map_location=device, weights_only=False)
     state_dict = checkpoint['state_dict']
 
     if istuning and tuning_layer is not None:
@@ -1166,6 +1254,16 @@ class GaussianBlur(object):
 # this is the model one case,
 # where the tuning value is returned with the largest tuning value (or the selective categorial  one)
 def find_selective_kernels(category, tuning_layer, csv_file):
+    """Split a layer's kernels into "selective" (best-tuned to one of `category`) vs. the rest.
+
+    Reads per-kernel tuning values from `csv_file`, keeps only rows for `tuning_layer`,
+    and for each kernel keeps whichever category has the largest tuning value. Kernels
+    whose largest category is in the comma-separated `category` list are considered
+    selective for it.
+
+    Returns:
+        (selective_kernels, selective_tuningvalues, non_selective_kernels, non_selective_tuningvalues)
+    """
     categories_tuning = category.split(',')
 
     label_csv = pd.read_csv(csv_file, header=0)
@@ -1202,6 +1300,7 @@ def find_selective_kernels(category, tuning_layer, csv_file):
 # This function returns the tuning values including both preferred and non-preferred tuning values
 #  one channel may have multiple tuning values, which is the difference from previous function;
 def find_selective_kernels_tuningvalues(category, tuning_layer, csv_file):
+    """Like find_selective_kernels, but keeps every category's tuning value per kernel (not just the max)."""
     categories_tuning = category.split(',')
 
     label_csv = pd.read_csv(csv_file, header=0)
@@ -1241,6 +1340,19 @@ def find_selective_kernels_tuningvalues(category, tuning_layer, csv_file):
 # randomly select a fixed number of kernels for tuning;
 def find_selective_kernels_shuffle(tuning_layer, csv_file, selectivity_csv_file=None,
                                    tuning_category=None, random_ratio=None, pool=1, path_per_layer_overlap_csv=None):
+    """Randomly sample a control set of kernels to tune, matched in size to a real selective set.
+
+    Used as a shuffled/control baseline for the selectivity-tuning experiments: instead
+    of tuning the kernels that are actually selective for `tuning_category`, this picks
+    a random sample of the same size from one of four candidate pools (`pool`):
+        1 - all kernels in the layer
+        2 or 4 - kernels not selective for `tuning_category`
+        3 - kernels that don't overlap with another category (via path_per_layer_overlap_csv)
+
+    Returns:
+        (selective_kernels, selective_tuningvalues, non_selective_kernels,
+         non_selective_tuningvalues, kernel_category)
+    """
     label_csv = pd.read_csv(csv_file, header=0)
     label_csv = label_csv[label_csv['layer'] == tuning_layer]
 
@@ -1316,6 +1428,7 @@ def find_selective_kernels_shuffle(tuning_layer, csv_file, selectivity_csv_file=
 
 
 def kernel_selectivity(tuning_layer, csv_file, kernel_id):
+    """Return the (category, tuning_value) for which a single kernel has its largest tuning value."""
     label_csv = pd.read_csv(csv_file, header=0)
     label_csv = label_csv[label_csv['layer'] == tuning_layer]
 
@@ -1334,6 +1447,7 @@ def kernel_selectivity(tuning_layer, csv_file, kernel_id):
 
 # read tuning value from files
 def get_tunningValue(self, category, layer, kernel, csv_file):
+    """Look up the tuning value for one (category, layer, kernel) triple in `csv_file`."""
     label_csv = pd.read_csv(csv_file, header=0, dtype=str)
     len_csv = len(label_csv)
     tuningvalue = 0
@@ -1347,6 +1461,7 @@ def get_tunningValue(self, category, layer, kernel, csv_file):
 
 
 def define_strenth_array(tuning_strenth_define):
+    """Build an array of tuning strengths from a (start, end, step) triple, e.g. for a tuning-curve sweep."""
     start_value = float(tuning_strenth_define[0])
     end_value = float(tuning_strenth_define[1])
     step_size = float(tuning_strenth_define[2])
@@ -1359,6 +1474,7 @@ def define_strenth_array(tuning_strenth_define):
 
 
 def get_overlap_kernels(category, overlap_csv):
+    """Return the (deduplicated) kernel IDs flagged as overlapping for `category` in `overlap_csv`."""
     df = pd.read_csv(overlap_csv, header=0)
     overlap_df = df[df['is_overlap'] == 1]
     overlap_df_cat = overlap_df[overlap_df['category'] == category]
@@ -1368,6 +1484,7 @@ def get_overlap_kernels(category, overlap_csv):
 
 
 def get_nonoverlap_kernels(category, overlap_csv):
+    """Return the (deduplicated) kernel IDs flagged as non-overlapping for `category` in `overlap_csv`."""
     df = pd.read_csv(overlap_csv, header=0)
     nonoverlap_df = df[df['is_overlap'] == 0]
     overlap_df_cat = nonoverlap_df[nonoverlap_df['category'] == category]
@@ -1377,18 +1494,18 @@ def get_nonoverlap_kernels(category, overlap_csv):
 
 
 class Quadrant_Processing(object):
-    r"""This part of the code is used in transforms.Compose function in Pytorch.
+    r"""Torchvision-style transform: shrink an image to quarter size and place it in one
+    quadrant of a black square canvas the size of the original image, leaving the other
+    three quadrants blank. Used so the CS (Gabor patch) and US (IAPS image) can occupy
+    disjoint quadrants of the same input image during simultaneous conditioning.
 
-       Args:
-            train_folder: the directory of training images of the dataset
-            val_folder: the directory of validation images of the dataset
-            test_folder: the directory of validation images of the dataset
-            is_gist: if you set to True, it will apply gist transformation
-            is_saliency: if you set to True it will apply saliency transformation
+    Args:
+        location (int): which quadrant to paste the resized image into.
+            1 = top-right, 2 = top-left, 3 = bottom-left, 4 = bottom-right.
 
-       Example:
-           data_transforms = data_transform(train_folder, val_folder, test_folder)
-       """
+    Example:
+        transforms.Compose([..., Quadrant_Processing(4), transforms.ToTensor(), ...])
+    """
 
     def __init__(self, location):
         self.location = location
@@ -1418,6 +1535,17 @@ class Quadrant_Processing(object):
 
 
 class Quadrant_Processing_Conditioning(object):
+    r"""Like Quadrant_Processing, but instead of a blank canvas, the other three quadrants
+    are filled with a randomly-chosen Gabor patch (the CS). This is what actually pairs a
+    US image with a CS image within a single training sample for the conditioning task.
+
+    Args:
+        location (int): which quadrant to paste the (resized) US image into.
+            1 = top-right, 2 = top-left, 3 = bottom-left, 4 = bottom-right.
+        patch (list[str]): candidate file paths for the CS Gabor patch; one is chosen at
+            random on every call, so repeated epochs see varied CS placements.
+    """
+
     def __init__(self, location, patch):
         self.location = location
         self.patch = patch
@@ -1451,6 +1579,15 @@ class Quadrant_Processing_Conditioning(object):
 
 
 class Quadrant_Processing_Conditioning_block_US(object):
+    r"""Torchvision-style transform that optionally blacks out the bottom-right quadrant
+    of an image in-place. Used as a manipulation check: with `apply=True`, the US image
+    is masked out so the model can only respond to the CS Gabor patch placed elsewhere
+    in the frame.
+
+    Args:
+        apply (bool): if True, block out the quadrant; if False, pass the image through unchanged.
+    """
+
     def __init__(self, apply):
         self.apply = apply
 

@@ -1,5 +1,14 @@
 from __future__ import print_function, division
 
+r"""Test whether a single Gabor patch's decoded valence shifts across conditioning.
+
+Loads every saved checkpoint in `model_dir` (typically an initial pre-conditioning model
+and one or more post-conditioning epochs), feeds them the same Gabor patch
+(--gabor_patch), and records each model's decoded valence to a CSV. The `--initial_model_name`
+and `--conditioned_model_name` rows are also printed directly for a quick before/after
+comparison.
+"""
+
 # base libraries
 import os
 import glob
@@ -20,7 +29,7 @@ from torchvision import transforms
 # project based libraries
 from utils import load_checkpoint
 from dataloader import image_patch_loader, Quadrant_Processing
-from models.VGG_Model import VGG, VGG_Freeze_conv, VGG_BN_Freeze_conv, VGG_Freeze_conv_FC1, VGG_Freeze_conv_FC2, \
+from models.VGG_Model import VGG_Unfreeze_All, VGG_Freeze_conv, VGG_BN_Freeze_conv, VGG_Freeze_conv_FC1, VGG_Freeze_conv_FC2, \
     Visual_Cortex_Amygdala, Visual_Cortex_Amygdala_wo_Attention
 
 # import time
@@ -31,12 +40,12 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 # Params
 parser = argparse.ArgumentParser(description='Parameters')
-parser.add_argument('--data_dir', default='./data/gabor_CS', type=str, help='the data root folder')
-parser.add_argument('--gabor_patch', default='gabor-gaussian-135-freq20-cont50.png', type=str,
+parser.add_argument('--data_dir', default='./data/gabor_patch_full/freq20/', type=str, help='the data root folder')
+parser.add_argument('--gabor_patch', default='gabor-gaussian-45-freq20-cont50.png', type=str,
                     help='the folder of test data')
 
 parser.add_argument('--model_dir',
-                    default='/home/seowung/Brain inspired AI_Fear Conditioning/code_new/savedmodel/',
+                    default='./savedmodel/',
                     type=str, help='where to save the trained model')
 
 parser.add_argument('--model_to_run', default=6, type=int, help='which model you want to run with experiment')
@@ -60,14 +69,9 @@ parser.add_argument('--csv_result_recording_folder', default='./result/model_tes
                     help='the folder including the results csv')
 parser.add_argument('--csv_result_recording_name', default='model_regression_test_results.csv')
 
-'''
-This code is used to determine if the model is conditioned or not by using gabor patch. 
-It reads the saved model for every epoch, from model_dir, and test the decoded valence of gabor_patch
-'''
-
 
 def iter_run_allmodels(dir, modelName):
-    # This function is depreciated
+    """Deprecated: print every checkpoint filename under `dir` matching `modelName`'s prefix."""
     path = os.path.join(dir, modelName[:-4] + '*.pth')
     for file_name in glob.iglob(path, recursive=True):
         print(file_name)
@@ -107,7 +111,7 @@ if __name__ == '__main__':
 
             # Choose the model for analysis
             if args.model_to_run == 1:
-                model = VGG()
+                model = VGG_Unfreeze_All()
             elif args.model_to_run == 2:
                 model = VGG_Freeze_conv()
             elif args.model_to_run == 3:
@@ -163,7 +167,7 @@ if __name__ == '__main__':
                 pred = preds
                 sub_df = pd.DataFrame([[file_name, pred[0]]], columns=['model', 'pred'])
 
-            result_df = result_df.append(sub_df, ignore_index=True)
+            result_df = pd.concat([result_df, sub_df], ignore_index=True)
             result_df = result_df.sort_values(by=['model'], ascending=True)
 
         # ----------------test-----------------------------#

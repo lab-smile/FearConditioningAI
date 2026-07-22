@@ -1,0 +1,28 @@
+name: fear-conditioning-ai
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - numpy
+  - pandas
+  - matplotlib
+  - seaborn
+  - pillow
+  - scikit-image
+  - scikit-learn
+  - scipy
+  - pytorch
+  - torchvision
+  - imageio
+  - numba
+  - tqdm
+  - pygal
+  - pip:
+      - altair
+      - altair-saver
+      - gputil
+# macOS (Intel or Apple Silicon).
+# conda-forge's PyTorch build is CPU-based but transparently supports Apple's
+# MPS GPU backend on Apple Silicon - no extra install step needed.
+# In code: torch.device("mps" if torch.backends.mps.is_available() else "cpu")
